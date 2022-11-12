@@ -17,3 +17,6 @@ function (p::RandomPolicy{S, A})(::S, ::A)::Float64 where {S, A}
     1 / length(p.actionspace)
 end
 
+
+
+RandomPolicy(mdp::AbstractMDP) = RandomPolicy(state_space(mdp), action_space(mdp))
