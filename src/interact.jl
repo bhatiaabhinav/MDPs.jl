@@ -12,7 +12,7 @@ postexperiment(::Union{AbstractPolicy, AbstractHook}; kwargs...) = nothing
 
 
 
-function interact(env::AbstractMDP{S, A}, max_steps::Int, policy::AbstractPolicy{S, A}, hooks...; γ=1.0, max_trials::Int = typemax(Int), rng::AbstractRNG=Random.GLOBAL_RNG, kwargs...)::Tuple{Vector{Float64}, Vector{Int}} where {S, A}
+function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real, horizon::Int, max_trials::Real, hooks...; max_steps::Real=Inf, rng::AbstractRNG=Random.GLOBAL_RNG, kwargs...)::Tuple{Vector{Float64}, Vector{Int}} where {S, A}
     steps::Int = 0
     lengths::Vector{Int} = Int[]
     returns::Vector{Float64} = Float64[]
@@ -31,7 +31,7 @@ function interact(env::AbstractMDP{S, A}, max_steps::Int, policy::AbstractPolicy
         push!(lengths, 0)
         push!(returns, 0)
         foreach(_preepisode, hooks)
-        while !in_absorbing_state(env) && (lengths[end] < horizon(env)) && (steps < max_steps)
+        while !in_absorbing_state(env) && (lengths[end] < horizon) && (steps < max_steps)
             foreach(_prestep, hooks)
             s = Tuple(state(env))
             a = policy(state(env))
@@ -45,7 +45,7 @@ function interact(env::AbstractMDP{S, A}, max_steps::Int, policy::AbstractPolicy
             lengths[end] += 1
             foreach(_poststep, hooks)
         end
-        if in_absorbing_state(env) || (lengths[end] == horizon(env))
+        if in_absorbing_state(env) || (lengths[end] >= horizon)
             foreach(_postepisode, hooks)
         end
     end

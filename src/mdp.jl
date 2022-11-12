@@ -1,6 +1,6 @@
 using StatsBase
 
-export AbstractMDP, state_space, action_space, action_meaning, action_meanings,  horizon, discount_factor, start_state_support, start_state_probability, start_state_distribution, transition_support, transition_probability, transition_distribution, reward, is_absorbing, state, action, reward, reset!, factory_reset!, step!, in_absorbing_state, visualize
+export AbstractMDP, state_space, action_space, action_meaning, action_meanings, start_state_support, start_state_probability, start_state_distribution, transition_support, transition_probability, transition_distribution, reward, is_absorbing, state, action, reward, reset!, factory_reset!, step!, in_absorbing_state, visualize
 
 abstract type AbstractMDP{S, A} end  # S = typeof(state(env)), A = typeof(action(env))
 
@@ -21,12 +21,6 @@ end
 function action_meanings(mdp::AbstractMDP{S, Int})::Vector{String} where {S}
     return map(a -> action_meaning(mdp, a), action_space(mdp))
 end
-
-function horizon(mdp::AbstractMDP)::Int
-    error("not implemented")
-end
-
-discount_factor(mdp::AbstractMDP)::Float64 = 0.99
 
 
 # ------------------------- when the model is known ------------------------------

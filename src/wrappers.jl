@@ -15,8 +15,6 @@ end
 @inline action_space(env::OneHotStateReprWrapper) = action_space(env.env)
 @inline state_space(env::OneHotStateReprWrapper) = env.ss
 @inline action_meaning(env::OneHotStateReprWrapper, a::Int) = action_meaning(env.env, a)
-@inline discount_factor(env::OneHotStateReprWrapper) = discount_factor(env.env)
-@inline horizon(env::OneHotStateReprWrapper) = horizon(env.env)
 
 
 state(env::OneHotStateReprWrapper) = env.state
@@ -30,7 +28,6 @@ function reset!(env::OneHotStateReprWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
 end
 
 function step!(env::OneHotStateReprWrapper, a::Int; rng::AbstractRNG=Random.GLOBAL_RNG)
-    # println(env.state)
     step!(env.env, a; rng=rng)
     env.state = to_onehot(env, state(env.env))
     nothing

@@ -1,7 +1,7 @@
 export TabularPolicy, GreedyPolicy, EpsilonGreedyPolicy
 
 
-struct TabularPolicy <: AbstractPolicy{Int, Int}
+mutable struct TabularPolicy <: AbstractPolicy{Int, Int}
     preferenes::Matrix{Float64}  # π(a|s)
 end
 
@@ -15,7 +15,7 @@ end
 
 
 
-struct GreedyPolicy <: AbstractPolicy{Int, Int}
+mutable struct GreedyPolicy <: AbstractPolicy{Int, Int}
     preferenes::Matrix{Float64}  # π(a|s)
 end
 
@@ -29,7 +29,7 @@ end
 
 
 
-struct EpsilonGreedyPolicy <: AbstractPolicy{Int, Int}
+mutable struct EpsilonGreedyPolicy <: AbstractPolicy{Int, Int}
     preferenes::Matrix{Float64}  # π(a|s)
     ϵ::Float64
 end
@@ -42,3 +42,20 @@ function (p::EpsilonGreedyPolicy)(s::Int, a::Int)::Float64
     n = size(p.preferenes, 1)
     return a == argmax(p.preferenes[:, s]) ? (1 - p.ϵ + p.ϵ / n) : p.ϵ / n
 end
+
+
+
+
+# struct SoftGreedyPolicy <: AbstractPolicy{Int, Int}
+#     preferenes::Matrix{Float64}  # π(a|s)
+#     temperature::Float64
+# end
+
+# function (p::SoftGreedyPolicy)(rng::AbstractRNG, s::Int)::Int
+#     return rand(rng) < p.ϵ ? rand(rng, 1:size(p.preferenes, 1)) : argmax(p.preferenes[:, s])
+# end
+
+# function (p::SoftGreedyPolicy)(s::Int, a::Int)::Float64
+#     n = size(p.preferenes, 1)
+#     return a == argmax(p.preferenes[:, s]) ? (1 - p.ϵ + p.ϵ / n) : p.ϵ / n
+# end
