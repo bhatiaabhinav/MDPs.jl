@@ -56,7 +56,7 @@ function is_absorbing(mdp::AbstractMDP{S, A}, s::S)::Bool where {S, A}
     error("absorbing (goal) states unknown")
 end
 
-function visualize(mdp::AbstractMDP{S, A}, s::S) where {S, A}
+function visualize(mdp::AbstractMDP{S, A}, s::S, args...; kwargs...) where {S, A}
     error("visualization not implemented")
 end
 
@@ -91,17 +91,29 @@ end
 function reset!(env::AbstractMDP{S, A}; rng::AbstractRNG=Random.GLOBAL_RNG)::Nothing where {S, A}
     support = collect(start_state_support(env))
     env.state = sample(rng, support, ProbabilityWeights(start_state_distribution(env, support)))
+    if A == Int
+        env.action = 0
+    else
+        fill!(env.action, 0)
+    end
     nothing
 end
 
 function step!(env::AbstractMDP{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG)::Nothing where {S, A}
-    s = state(env)
-    support = collect(transition_support(env, s, a))
-    s′ = sample(rng, support, ProbabilityWeights(transition_distribution(env, s, a, support)))
-    r = reward(env, s, a, s′)
-    env.state = s′
+    @assert a ∈ action_space(env)
     env.action = a
-    env.reward = r
+    if in_absorbing_state(env)
+        @warn "The environment is in an absorbing state. This `step!` will not do anything. Please call `reset!`."
+        env.reward = 0
+    else
+        s = state(env)
+        support = collect(transition_support(env, s, a))
+        s′ = sample(rng, support, ProbabilityWeights(transition_distribution(env, s, a, support)))
+        r = reward(env, s, a, s′)
+        env.state = s′
+        env.action = a
+        env.reward = r
+    end
     nothing
 end
 
@@ -109,8 +121,8 @@ function in_absorbing_state(env::AbstractMDP)::Bool
     return is_absorbing(env, state(env))
 end
 
-function visualize(env::AbstractMDP)
-    return visualize(env, state(env))
+function visualize(env::AbstractMDP, args...; kwargs...)
+    return visualize(env, state(env), args...; kwargs...)
 end
 
 # -------------------------------------------------------------------

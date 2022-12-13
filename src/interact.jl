@@ -12,17 +12,17 @@ postexperiment(::Union{AbstractPolicy, AbstractHook}; kwargs...) = nothing
 
 
 
-function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real, horizon::Int, max_trials::Real, hooks...; max_steps::Real=Inf, rng::AbstractRNG=Random.GLOBAL_RNG, kwargs...)::Tuple{Vector{Float64}, Vector{Int}} where {S, A}
+function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real, horizon::Real, max_trials::Real, hooks...; max_steps::Real=Inf, rng::AbstractRNG=Random.GLOBAL_RNG, kwargs...)::Tuple{Vector{Float64}, Vector{Int}} where {S, A}
     steps::Int = 0
     lengths::Vector{Int} = Int[]
     returns::Vector{Float64} = Float64[]
 
-    _preexperiment(hook) = preexperiment(hook; env, policy, max_steps, max_trials, rng, kwargs...)
-    _preepisode(hook) = preepisode(hook; env, policy, steps, lengths, returns, max_steps, max_trials, rng, kwargs...)
-    _prestep(hook) = prestep(hook; env, policy, steps, lengths, returns, max_steps, max_trials, rng, kwargs...)
-    _poststep(hook) = poststep(hook; env, policy, steps, lengths, returns, max_steps, max_trials, rng, kwargs...)
-    _postepisode(hook) = postepisode(hook; env, policy, steps, lengths, returns, max_steps, max_trials, rng, kwargs...)
-    _postexperiment(hook) = postexperiment(hook; env, policy, steps, lengths, returns, max_steps, max_trials, rng, kwargs...)
+    _preexperiment(hook) = preexperiment(hook; env, policy, max_steps, max_trials, horizon, rng, kwargs...)
+    _preepisode(hook) = preepisode(hook; env, policy, steps, lengths, returns, max_steps, max_trials, horizon, rng, kwargs...)
+    _prestep(hook) = prestep(hook; env, policy, steps, lengths, returns, max_steps, max_trials, horizon, rng, kwargs...)
+    _poststep(hook) = poststep(hook; env, policy, steps, lengths, returns, max_steps, max_trials, horizon, rng, kwargs...)
+    _postepisode(hook) = postepisode(hook; env, policy, steps, lengths, returns, max_steps, max_trials, horizon, rng, kwargs...)
+    _postexperiment(hook) = postexperiment(hook; env, policy, steps, lengths, returns, max_steps, max_trials, horizon, rng, kwargs...)
 
     hooks = vcat(policy, collect(hooks))
     foreach(_preexperiment, hooks)
@@ -39,7 +39,6 @@ function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real
             steps += 1
             r = reward(env)
             s′ = Tuple(state(env))
-            # println(reward(env))
             @debug "experience" s a r s′
             returns[end] += γ^(lengths[end]) * reward(env)
             lengths[end] += 1

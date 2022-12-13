@@ -49,8 +49,10 @@ end
 @inline Base.in(m::Array{T, N}, cs::TensorSpace{T, N}) where {T,N} = all(cs.lows .<= m .<= cs.highs)
 function Random.rand(rng::AbstractRNG, c::Random.SamplerTrivial{TensorSpace{T, N}}) where {T, N}
     cs::TensorSpace{T, N} = c[]
-    # TODO: fix sampling when the space contains infinities
-    return rand(rng, T, size(cs.lows)) .* (min.(cs.highs, floatmax(T)) .- max.(cs.lows, floatmin(T))) .+ max.(cs.lows, floatmin(T))
+    p1::Vector{T} = rand(rng, T, size(cs.lows))
+    scale::Vector{T} = (min.(cs.highs, floatmax(T)) .- max.(cs.lows, -floatmax(T)))
+    shift::Vector{T} = max.(cs.lows, -floatmax(T))
+    return p1 .* scale .+ shift 
 end
 
 
