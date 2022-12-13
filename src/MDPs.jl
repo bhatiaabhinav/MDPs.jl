@@ -8,5 +8,6 @@ include("random_policy.jl")
 include("tabular_policy.jl")
 include("random_mdp.jl")
 include("wrappers.jl")
+include("hooks.jl")
 
 end # module MDPs
