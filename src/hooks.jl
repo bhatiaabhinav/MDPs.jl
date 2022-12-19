@@ -13,18 +13,20 @@ struct EmpiricalPolicyEvaluationHook <: AbstractHook
     horizon::Real
     n::Int
     sample_size::Int
+    env::Union{Nothing, AbstractMDP}
     returns::Vector{Float64}
-    EmpiricalPolicyEvaluationHook(π::AbstractPolicy, γ::Real, horizon::Real, n::Int, sample_size::Int) = new(π, γ, horizon, n, sample_size, Float64[])
+    EmpiricalPolicyEvaluationHook(π::AbstractPolicy, γ::Real, horizon::Real, n::Int, sample_size::Int; env::AbstractMDP=nothing) = new(π, γ, horizon, n, sample_size, env, Float64[])
 end
 
 function preexperiment(peh::EmpiricalPolicyEvaluationHook; env, kwargs...)
-    # env = deepcopy(env)
-    push!(peh.returns, mean(interact(env, peh.π, peh.γ, peh.horizon, peh.sample_size)[1]))
+    _env = isnothing(peh.env) ? env : peh.env
+    push!(peh.returns, mean(interact(_env, peh.π, peh.γ, peh.horizon, peh.sample_size)[1]))
 end
 
 function postepisode(peh::EmpiricalPolicyEvaluationHook; env, returns, kwargs...)
     if length(returns) % peh.n == 0
-        push!(peh.returns, mean(interact(env, peh.π, peh.γ, peh.horizon, peh.sample_size)[1]))
+        _env = isnothing(peh.env) ? env : peh.env
+        push!(peh.returns, mean(interact(_env, peh.π, peh.γ, peh.horizon, peh.sample_size)[1]))
     end
 end
 
