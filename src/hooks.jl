@@ -15,7 +15,7 @@ struct EmpiricalPolicyEvaluationHook <: AbstractHook
     sample_size::Int
     env::Union{Nothing, AbstractMDP}
     returns::Vector{Float64}
-    EmpiricalPolicyEvaluationHook(π::AbstractPolicy, γ::Real, horizon::Real, n::Int, sample_size::Int; env::AbstractMDP=nothing) = new(π, γ, horizon, n, sample_size, env, Float64[])
+    EmpiricalPolicyEvaluationHook(π::AbstractPolicy, γ::Real, horizon::Real, n::Int, sample_size::Int; env::Union{Nothing, AbstractMDP}=nothing) = new(π, γ, horizon, n, sample_size, env, Float64[])
 end
 
 function preexperiment(peh::EmpiricalPolicyEvaluationHook; env, kwargs...)
