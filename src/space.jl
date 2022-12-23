@@ -1,6 +1,6 @@
 using Random
 
-export AbstractSpace, IntegerSpace, TensorSpace, VectorSpace, MatrixSpace
+export AbstractSpace, IntegerSpace, TensorSpace, VectorSpace, MatrixSpace, discretize
 
 abstract type AbstractSpace{E} end
 @inline Base.eltype(::Type{<:AbstractSpace{E}}) where E = E
@@ -8,8 +8,6 @@ abstract type AbstractSpace{E} end
 @inline Base.ndims(::Type{<:AbstractSpace{E}}) where E = ndims(E)
 @inline Base.ndims(::AbstractSpace{E}) where E = ndims(E)
 @inline Base.in(::Any, ::AbstractSpace{E}) where E = false
-
-
 
 
 struct IntegerSpace <: AbstractSpace{Int}
@@ -58,3 +56,17 @@ end
 
 const VectorSpace{T} = TensorSpace{T, 1}
 const MatrixSpace{T} = TensorSpace{T, 2}
+
+
+function discretize(x::Array{T, N}, ts::TensorSpace{T, N}, num_buckets::Vector{Int})::Int where {T<:AbstractFloat, N}
+    return discretize(x, ts.lows, ts.highs, num_buckets)
+end
+
+function discretize(x::Array{T, N}, lows::Array{T, N}, highs::Array{T, N}, num_buckets::Vector{Int})::Int where {T<:AbstractFloat, N}
+    x = clamp.((x - lows) ./ (highs - lows), T(1e-9), T(1))
+    x = Int.(ceil.(num_buckets .* x))
+    m = reverse(cumprod(reverse(num_buckets)))
+    x = sum((x.-1)[1:end-1] .* m[2:end]) + x[end]
+    @assert x <= prod(num_buckets)
+    return x
+end
