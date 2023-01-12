@@ -34,7 +34,8 @@ function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real
         while !in_absorbing_state(env) && (lengths[end] < horizon) && (steps < max_steps)
             foreach(_prestep, hooks)
             s = Tuple(state(env))
-            a = policy(state(env))
+            # println("here")
+            a = policy(rng, state(env))
             step!(env, a; rng=rng)
             steps += 1
             r = reward(env)
