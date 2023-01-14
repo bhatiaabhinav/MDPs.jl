@@ -27,6 +27,8 @@ mutable struct RandomDiscreteMDP <: AbstractMDP{Int, Int}
     end
 end
 
+RandomDiscreteMDP(nstates, nactions) = RandomDiscreteMDP(Random.GLOBAL_RNG, nstates, nactions)
+
 state_space(mdp::RandomDiscreteMDP) = IntegerSpace(mdp.nstates)
 action_space(mdp::RandomDiscreteMDP) = IntegerSpace(mdp.nactions)
 
