@@ -39,3 +39,32 @@ transition_probability(mdp::RandomDiscreteMDP, s::Int, a::Int, s′::Int)::Float
 reward(mdp::RandomDiscreteMDP, s::Int, a::Int, s′::Int)::Float64 = mdp.R[a, s]
 
 is_absorbing(mdp::RandomDiscreteMDP, s::Int)::Bool = false
+
+
+
+"""Sample new episode"""
+function reset!(env::RandomDiscreteMDP; rng::AbstractRNG=Random.GLOBAL_RNG)::Nothing
+    support = collect(start_state_support(env))
+    env.state = sample(rng, support, ProbabilityWeights(start_state_distribution(env, support)))
+    env.action = 0
+    env.reward = 0
+    nothing
+end
+
+function step!(env::RandomDiscreteMDP, a::Int; rng::AbstractRNG=Random.GLOBAL_RNG)::Nothing
+    @assert a ∈ action_space(env)
+    env.action = a
+    if in_absorbing_state(env)
+        @warn "The environment is in an absorbing state. This `step!` will not do anything. Please call `reset!`."
+        env.reward = 0
+    else
+        s = state(env)
+        support = collect(transition_support(env, s, a))
+        s′ = sample(rng, support, ProbabilityWeights(transition_distribution(env, s, a, support)))
+        env.state = s′
+        env.action = a
+        r̄ = reward(env, s, a, s′)
+        env.reward = r̄ + randn(rng)
+    end
+    nothing
+end
