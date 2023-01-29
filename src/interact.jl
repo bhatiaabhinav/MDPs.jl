@@ -24,6 +24,8 @@ function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real
     _postepisode(hook) = postepisode(hook; env, policy, steps, lengths, returns, max_steps, max_trials, horizon, rng, kwargs...)
     _postexperiment(hook) = postexperiment(hook; env, policy, steps, lengths, returns, max_steps, max_trials, horizon, rng, kwargs...)
 
+    factory_reset!(env)
+
     hooks = vcat(policy, collect(hooks))
     foreach(_preexperiment, hooks)
     while (steps < max_steps) && (length(returns) < max_trials)
