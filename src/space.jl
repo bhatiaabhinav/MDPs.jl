@@ -27,14 +27,14 @@ Random.rand(rng::AbstractRNG, d::Random.SamplerTrivial{IntegerSpace}) = rand(rng
 
 
 
-struct TensorSpace{T <: AbstractFloat, N} <: AbstractSpace{Array{T, N}}
+struct TensorSpace{T <: Real, N} <: AbstractSpace{Array{T, N}}
     lows::Array{T, N}
     highs::Array{T, N}
-    function TensorSpace{T, N}(low::Real, high::Real, size::NTuple{N, Int}) where {T<:AbstractFloat, N}
+    function TensorSpace{T, N}(low::Real, high::Real, size::NTuple{N, Int}) where {T<:Real, N}
         @assert low <= high
         new{T, N}(fill(T(low), size), fill(T(high), size))
     end
-    function TensorSpace{T, N}(lows::Array{T, N}, highs::Array{T, N}) where {T<:AbstractFloat, N}
+    function TensorSpace{T, N}(lows::Array{T, N}, highs::Array{T, N}) where {T<:Real, N}
         @assert all(lows .<= highs)
         @assert size(lows) == size(highs)
         new{T, N}(lows, highs)
@@ -45,11 +45,18 @@ end
 @inline Base.size(cs::TensorSpace, dim) = size(cs)[dim]
 @inline Base.length(cs::TensorSpace) = Inf
 @inline Base.in(m::Array{T, N}, cs::TensorSpace{T, N}) where {T,N} = all(cs.lows .<= m .<= cs.highs)
-function Random.rand(rng::AbstractRNG, c::Random.SamplerTrivial{TensorSpace{T, N}}) where {T, N}
+function Random.rand(rng::AbstractRNG, c::Random.SamplerTrivial{TensorSpace{T, N}}) where {T<:AbstractFloat, N}
     cs::TensorSpace{T, N} = c[]
-    p1::Vector{T} = rand(rng, T, size(cs.lows))
-    scale::Vector{T} = (min.(cs.highs, floatmax(T)) .- max.(cs.lows, -floatmax(T)))
-    shift::Vector{T} = max.(cs.lows, -floatmax(T))
+    p1::Array{T, N} = rand(rng, T, size(cs.lows))
+    scale::Array{T, N} = (min.(cs.highs, floatmax(T)) .- max.(cs.lows, -floatmax(T)))
+    shift::Array{T, N} = max.(cs.lows, -floatmax(T))
+    return p1 .* scale .+ shift 
+end
+function Random.rand(rng::AbstractRNG, c::Random.SamplerTrivial{TensorSpace{T, N}}) where {T<:Integer, N}
+    cs::TensorSpace{T, N} = c[]
+    p1::Array{T, N} = rand(rng, T, size(cs.lows))
+    scale::Array{T, N} = (min.(cs.highs, typemax(T)) .- max.(cs.lows, -typemax(T)))
+    shift::Array{T, N} = max.(cs.lows, -typemax(T))
     return p1 .* scale .+ shift 
 end
 
