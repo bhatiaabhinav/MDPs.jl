@@ -33,7 +33,7 @@ function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real
         push!(lengths, 0)
         push!(returns, 0)
         foreach(_preepisode, hooks)
-        while !in_absorbing_state(env) && (lengths[end] < horizon) && (steps < max_steps)
+        while !in_absorbing_state(env) && !truncated(env) && (lengths[end] < horizon) && (steps < max_steps)
             foreach(_prestep, hooks)
             s = Tuple(state(env))
             # println("here")
