@@ -1,6 +1,6 @@
 using StatsBase
 
-export AbstractMDP, state_space, action_space, action_meaning, action_meanings, start_state_support, start_state_probability, start_state_distribution, transition_support, transition_probability, transition_distribution, reward, is_absorbing, state, action, reward, reset!, factory_reset!, step!, in_absorbing_state, visualize
+export AbstractMDP, state_space, action_space, action_meaning, action_meanings, start_state_support, start_state_probability, start_state_distribution, transition_support, transition_probability, transition_distribution, reward, is_absorbing, truncated, state, action, reward, reset!, factory_reset!, step!, in_absorbing_state, visualize
 
 abstract type AbstractMDP{S, A} end  # S = typeof(state(env)), A = typeof(action(env))
 
@@ -119,6 +119,10 @@ end
 
 function in_absorbing_state(env::AbstractMDP)::Bool
     return is_absorbing(env, state(env))
+end
+
+function truncated(env::AbstractMDP)::Bool
+    return false
 end
 
 function visualize(env::AbstractMDP, args...; kwargs...)
