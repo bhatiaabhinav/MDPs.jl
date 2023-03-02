@@ -28,13 +28,15 @@ reward(env::OneHotStateReprWrapper) = reward(env.env)
 
 function reset!(env::OneHotStateReprWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
     reset!(env.env; rng=rng)
-    env.state = to_onehot(env, state(env.env))
+    fill!(env.state, 0)
+    env.state[state(env.env)] = 1
     nothing
 end
 
 function step!(env::OneHotStateReprWrapper, a::Int; rng::AbstractRNG=Random.GLOBAL_RNG)
     step!(env.env, a; rng=rng)
-    env.state = to_onehot(env, state(env.env))
+    fill!(env.state, 0)
+    env.state[state(env.env)] = 1
     nothing
 end
 
