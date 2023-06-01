@@ -1,6 +1,10 @@
 export TabularPolicy, GreedyPolicy, EpsilonGreedyPolicy
 
+"""
+    TabularPolicy(preferences)
 
+Tabular policy that takes actions according to the preferences stored in the matrix `preferences`. The policy is stochastic and the probability of taking action `a` in state `s` is given by `preferences[a, s] / sum(preferences[:, s])`.
+"""
 mutable struct TabularPolicy <: AbstractPolicy{Int, Int}
     preferenes::Matrix{Float64}  # π(a|s)
 end
@@ -14,7 +18,11 @@ function (p::TabularPolicy)(s::Int, a::Int)::Float64
 end
 
 
+"""
+    GreedyPolicy(preferences)
 
+Tabular policy that takes actions according to the preferences stored in the matrix `preferences`. The policy is deterministic and the action with the highest preference is taken.
+"""
 mutable struct GreedyPolicy <: AbstractPolicy{Int, Int}
     preferenes::Matrix{Float64}  # π(a|s)
 end
@@ -28,7 +36,11 @@ function (p::GreedyPolicy)(s::Int, a::Int)::Float64
 end
 
 
+"""
+    EpsilonGreedyPolicy(preferences, ϵ)
 
+Tabular policy that takes actions according to the preferences stored in the matrix `preferences`. The policy is stochastic and the probability of taking the action with the highest preference is `1 - ϵ + ϵ / n`, where `n` is the number of actions. The probability of taking any other action is `ϵ / n`.
+"""
 mutable struct EpsilonGreedyPolicy <: AbstractPolicy{Int, Int}
     preferenes::Matrix{Float64}  # π(a|s)
     ϵ::Float64

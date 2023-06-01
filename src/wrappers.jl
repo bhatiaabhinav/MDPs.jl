@@ -1,6 +1,11 @@
 export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper
 import Statistics
 
+"""
+    OneHotStateReprWrapper{T}(env::AbstractMDP{Int, Int}) where {T<:AbstractFloat}
+
+Wrapper that converts the state representation of an MDP from integers to one-hot vectors. The state space of the wrapped MDP is a `VectorSpace{T}`. Each element of the new state space is a one-hot vector of length `n`, where `n` is the number of states in the wrapped MDP.
+"""
 mutable struct OneHotStateReprWrapper{T<:AbstractFloat} <: AbstractMDP{Vector{T}, Int}
     env::AbstractMDP{Int, Int}
     ss::VectorSpace{T}
@@ -51,6 +56,11 @@ function to_onehot(env::OneHotStateReprWrapper{T}, s::Int) where T
     return _s
 end
 
+"""
+    to_onehot(x::Int, max_x::Int, T=Float32)
+
+Converts an integer `x` to a one-hot vector of length `max_x` with eltype `T`.
+"""
 function to_onehot(x::Int, max_x::Int, T=Float32)
     onehot_x = zeros(T, max_x)
     onehot_x[x] = 1
@@ -60,7 +70,11 @@ end
 
 
 
+"""
+    FrameStackWrapper{T, A}(env::AbstractMDP{Vector{T}, A}, k::Int=4) where {T, A}
 
+Wrapper that stacks the last `k` observations of an MDP's state space into a single vector. The state space of the wrapped MDP is a `VectorSpace{T}`. Each element of the new state space is a vector of length `n*k`, where `n` is the length of the states in the wrapped MDP.
+"""
 struct FrameStackWrapper{T, A} <: AbstractMDP{Vector{T}, A}
     env::AbstractMDP{Vector{T}, A}
     ss::VectorSpace{T}
@@ -169,20 +183,36 @@ function Statistics.std(rmv::RunningMeanVariance{T, N}; corrected::Bool=true)::U
     end
 end
 
+"""
+    NormalizeWrapper(env::AbstractMDP;  normalize_obs=true, normalize_reward=true, clip_obs=10.0, clip_reward=10.0, γ=0.99, ϵ=1e-8)
+
+Normalize and clips the observations and rewards of an MDP. This is useful for training neural network policies.
+
+# Arguments
+- `env::AbstractMDP`: the environment to wrap
+- `normalize_obs::Bool=true`: whether to normalize the observations
+- `normalize_reward::Bool=true`: whether to normalize the rewards
+- `clip_obs::T=10.0`: clip the element in the observations to `[-clip_obs, clip_obs]`
+- `clip_reward::Float64=10.0`: clip the rewards to `[-clip_reward, clip_reward]`
+- `γ::Float64=0.99`: discount factor
+- `ϵ::Float64=1e-8`: small constant to avoid division by zero
+
+# References
+-  Stable Baselines3 implementation of VecNormalize: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/vec_env/vec_normalize.py)
+""" 
 Base.@kwdef struct NormalizeWrapper{T, N, A} <: AbstractMDP{Array{T, N}, A}
     env::AbstractMDP{Array{T, N}, A}
     obs_rmv::RunningMeanVariance{T, N} = RunningMeanVariance{T, N}(shape=size(state_space(env))[1:end-1])
     rew_rmv::RunningMeanVariance{Float64, 0} = RunningMeanVariance{Float64, 0}(shape=())
     normalize_obs::Bool = true
     normalize_reward::Bool = true
-    clip_obs::T = T(100.0)
-    clip_reward::Float64 = 100.0
+    clip_obs::T = T(10.0)
+    clip_reward::Float64 = 10.0
     γ::Float64 = 0.99
-    ϵ::Float64 = 1e-4
+    ϵ::Float64 = 1e-8
 end
 
 function NormalizeWrapper(env::AbstractMDP{Array{T, N}, A}; kwargs...) where {T, N, A}
-    # println("here")
     NormalizeWrapper{T, N, A}(env=env; kwargs...)
 end
 function factory_reset!(env::NormalizeWrapper)

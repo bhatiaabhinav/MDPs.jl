@@ -3,7 +3,11 @@ using Distributions
 
 export RandomDiscreteMDP
 
-"""State transitions follow a flat Dirichlet distribution. Rewards are determinisitic R(a|s) and are independently sampled from Normal(1,1) for each instance of the MDP. Each episode starts with state=1 deterministically."""
+"""
+    RandomDiscreteMDP(nstates, nactions; α = 1.0, β = 1.0, uniform_dist_rewards=false)
+
+Create a random discrete MDP with `nstates` states and `nactions` actions. The transition probabilities are sampled from a Dirichlet distribution with parameter `α` and the mean rewards are sampled from a normal distribution with mean 1 and standard deviation `β`. If `uniform_dist_rewards` is true, then the rewards are sampled from a uniform distribution on the interval [1 - β, 1 + β]. When the MDP is 'stepped', the reward is generated stochastically from the normal distribution with mean `R(a|s)` and standard deviation 1.0.
+"""
 mutable struct RandomDiscreteMDP <: AbstractMDP{Int, Int}
     const nstates::Int
     const nactions::Int
@@ -14,20 +18,24 @@ mutable struct RandomDiscreteMDP <: AbstractMDP{Int, Int}
     state::Int
     action::Int
     reward::Float64
-    function RandomDiscreteMDP(rng, nstates, nactions)
+    function RandomDiscreteMDP(rng, nstates, nactions; α = 1.0, β = 1.0, uniform_dist_rewards=false)
         d₀ = zeros(nstates)
         d₀[1] = 1
         T = zeros(nstates, nactions, nstates)
         for s in 1:nstates
-            T[:, :, s] .= rand(rng, Dirichlet(nstates, 1.0), nactions)
+            T[:, :, s] .= rand(rng, Dirichlet(nstates, α), nactions)
         end
         @assert all(sum(T; dims=1) .≈ 1.0)
-        R = 1.0 .+ randn(rng, nactions, nstates)
+        if uniform_dist_rewards
+            R = rand(rng, Uniform(1.0 - β, 1.0 + β), nactions, nstates)
+        else
+            R = 1.0 .+ β * randn(rng, nactions, nstates)
+        end
         return new(nstates, nactions, d₀, T, R, 1, 1, 0)
     end
 end
 
-RandomDiscreteMDP(nstates, nactions) = RandomDiscreteMDP(Random.GLOBAL_RNG, nstates, nactions)
+RandomDiscreteMDP(nstates, nactions; kwargs...) = RandomDiscreteMDP(Random.GLOBAL_RNG, nstates, nactions; kwargs...)
 
 state_space(mdp::RandomDiscreteMDP) = IntegerSpace(mdp.nstates)
 action_space(mdp::RandomDiscreteMDP) = IntegerSpace(mdp.nactions)
