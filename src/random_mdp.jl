@@ -49,8 +49,6 @@ reward(mdp::RandomDiscreteMDP, s::Int, a::Int, s′::Int)::Float64 = mdp.R[a, s]
 is_absorbing(mdp::RandomDiscreteMDP, s::Int)::Bool = false
 
 
-
-"""Sample new episode"""
 function reset!(env::RandomDiscreteMDP; rng::AbstractRNG=Random.GLOBAL_RNG)::Nothing
     support = collect(start_state_support(env))
     env.state = sample(rng, support, ProbabilityWeights(start_state_distribution(env, support)))
