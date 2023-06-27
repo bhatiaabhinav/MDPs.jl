@@ -122,103 +122,72 @@ end
 
 
 
-Base.@kwdef mutable struct RunningMeanVariance{T, N}
-    const shape::NTuple{N, Int}
-    const μ::Array{Float64, N} = zeros(Float64, shape...)
-    const M₂::Array{Float64, N} = zeros(Float64, shape...)
-    n::Int = 0
-end
-
-function reset_rmv!(rmv::RunningMeanVariance)
-    rmv.n = 0
-    fill!(rmv.μ, 0)
-    fill!(rmv.M₂, 0)
-    nothing
-end
-
-function increment_rmv!(rmv::RunningMeanVariance{T, N}, x::Union{AbstractArray{T, N}, T}) where {T, N}
-    rmv.n += 1
-    Δ = x .- rmv.μ
-    rmv.μ .+= Δ / rmv.n
-    rmv.M₂ .+= Δ .* (x .- rmv.μ)
-    nothing
-end
-
-function Statistics.mean(rmv::RunningMeanVariance{T, N})::Union{T, Array{T, N}} where {T, N}
-    if rmv.n < 1
-        μ = fill(NaN, rmv.shape...)
-    else
-        μ = rmv.μ
-    end
-    if N == 0
-        return T(μ[])
-    else
-        return convert(Array{T, N}, μ)
-    end
-end
-
-function Statistics.var(rmv::RunningMeanVariance{T, N}; corrected::Bool=true)::Union{T, Array{T, N}} where {T, N}
-    if rmv.n < 2
-        σ² = fill(NaN, rmv.shape...)
-    else
-        σ² = rmv.M₂ / (rmv.n - Int(corrected))
-    end
-    if N == 0
-        return T(σ²[])
-    else
-        return convert(Array{T, N}, σ²)
-    end
-end
-
-function Statistics.std(rmv::RunningMeanVariance{T, N}; corrected::Bool=true)::Union{T, Array{T, N}} where {T, N}
-    if rmv.n < 2
-        σ = N == 0 ? NaN : fill(NaN, rmv.shape...)
-    else
-        σ = sqrt.(rmv.M₂ / (rmv.n - Int(corrected)))
-    end
-    if N == 0
-        return T(σ) # sqrt converts 0-dim Array to scalar. No need to do σ[]
-    else
-        return convert(Array{T, N}, σ)
-    end
-end
-
 """
-    NormalizeWrapper(env::AbstractMDP;  normalize_obs=true, normalize_reward=true, clip_obs=10.0, clip_reward=10.0, γ=0.99, ϵ=1e-8)
+    NormalizeWrapper{T, N, A}(env::AbstractMDP{Vector{T, N}, A}, normalize_obs::Bool=true, normalize_reward::Bool=true, clip_obs::T=100.0, clip_reward::Float64=100.0, γ::Float64=0.99, ϵ::Float64=1e-4) where {T, N, A}
 
-Normalize and clips the observations and rewards of an MDP. This is useful for training neural network policies.
+    NormalizeWrapper(env::AbstractMDP; kwargs...)
+
+Wrapper that normalizes the observations and rewards of an MDP. The states of the wrapped MDP are of type `Array{T, N}` and actions are of type `A`. The observations are normalized by subtracting the mean and dividing by the standard deviation. The rewards are normalized by dividing by the standard deviation of a rolling discounted sum of the rewards.
+
+Note: It is important to save the normalization statistics after training and load them before testing. Otherwise, the agent will not behave correctly. At testing time, you should not update the normalization statistics. You can do this by setting `wrapper_env.update_stats=false` or by passing `update_stats=false` to the constructor.
+
+Note: If you wish to wrap multiple environments with the same normalization statistics, you can do so by passing the same `obs_rmv`, `rew_rmv` and `ret_rmv` to each wrapper. This is useful if you want to train multiple agents in parallel with the same normalization statistics. For example, you can do the following:
+
+```julia
+env = ... # some environment with states of type Array{T, N}`
+obs_rmv = RunningMeanVariance{T, N}(shape=size(state_space(env))[1:end-1])
+rew_rmv = RunningMeanVariance{Float64}()
+ret_rmv = RunningMeanVariance{Float64}()
+env = NormalizeWrapper(env, obs_rmv=obs_rmv, rew_rmv=rew_rmv, ret_rmv=ret_rmv, kwargs...)
+# or
+env = NormalizeWrapper(env, kwargs...)
+obs_rmv, rew_rmv, ret_rmv = env.obs_rmv, env.rew_rmv, env.ret_rmv
+
+# then you can wrap other environments with the same normalization statistics
+env1 = NormalizeWrapper(env1, obs_rmv=obs_rmv, rew_rmv=rew_rmv, ret_rmv=ret_rmv, kwargs...)
+env2 = NormalizeWrapper(env2, obs_rmv=obs_rmv, rew_rmv=rew_rmv, ret_rmv=ret_rmv, kwargs...)
+...
+```
 
 # Arguments
 - `env::AbstractMDP`: the environment to wrap
 - `normalize_obs::Bool=true`: whether to normalize the observations
 - `normalize_reward::Bool=true`: whether to normalize the rewards
-- `clip_obs::T=10.0`: clip the element in the observations to `[-clip_obs, clip_obs]`
-- `clip_reward::Float64=10.0`: clip the rewards to `[-clip_reward, clip_reward]`
-- `γ::Float64=0.99`: discount factor
-- `ϵ::Float64=1e-8`: small constant to avoid division by zero
+- `normalize_reward_by_reward_std::Bool=false`: If true, reward are normalized by standard deviation of the rewards. By default, rewards are normalized by the standard deviation of a rolling discounted sum of the rewards.
+- `clip_obs::T=100.0`: the absolute value to clip the observations to
+- `clip_reward::Float64=100.0`: the absolute value to clip the rewards to
+- `γ::Float64=0.99`: the discount factor
+- `ϵ::Float64=1e-4`: a small value to avoid division by zero
+- `update_stats=true`: whether to update the normalization statistics. Set this to `false` at testing time.
+- `obs_rmv=RunningMeanVariance{T, N}(shape=size(state_space(env))[1:end-1])`: a data structure to maintain the running mean and variance of the observations
+- `ret_rmv=RunningMeanVariance{Float64}()`: a data structure to maintain the running variance of rolling discounted returns
+- `rew_rmv=RunningMeanVariance{Float64}()`: a data structure to maintain the running variance of the rewards
+
 
 # References
 -  Stable Baselines3 implementation of VecNormalize: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/vec_env/vec_normalize.py)
 """ 
 Base.@kwdef struct NormalizeWrapper{T, N, A} <: AbstractMDP{Array{T, N}, A}
-    env::AbstractMDP{Array{T, N}, A}
-    obs_rmv::RunningMeanVariance{T, N} = RunningMeanVariance{T, N}(shape=size(state_space(env))[1:end-1])
-    rew_rmv::RunningMeanVariance{Float64, 0} = RunningMeanVariance{Float64, 0}(shape=())
+    const env::AbstractMDP{Array{T, N}, A}
     normalize_obs::Bool = true
     normalize_reward::Bool = true
-    clip_obs::T = T(10.0)
-    clip_reward::Float64 = 10.0
-    γ::Float64 = 0.99
-    ϵ::Float64 = 1e-8
+    normalize_reward_by_reward_std::Bool = false  # if false, normalize by return std
+    const clip_obs::T = T(100.0)
+    const clip_reward::Float64 = 100.0
+    const γ::Float64 = 0.99
+    const ϵ::Float64 = 1e-4
+    update_stats = true
+    obs_rmv::RunningMeanVariance{T, N} = RunningMeanVariance{T, N}(shape=size(state_space(env))[1:end-1])
+    ret_rmv::RunningMeanVariance{Float64, 0} = RunningMeanVariance{Float64}()
+    rew_rmv::RunningMeanVariance{Float64, 0} = RunningMeanVariance{Float64}()
+    ret::Float64 = 0.0
 end
 
 function NormalizeWrapper(env::AbstractMDP{Array{T, N}, A}; kwargs...) where {T, N, A}
-    NormalizeWrapper{T, N, A}(env=env; kwargs...)
+    NormalizeWrapper{T, N, A}(; env=env, kwargs...)
 end
 function factory_reset!(env::NormalizeWrapper)
-    reset_rmv!(env.obs_rmv)
-    reset_rmv!(env.rew_rmv)
-    factory_reset!(env.env)
+    factory_reset!(env.env) 
 end
 
 @inline action_space(env::NormalizeWrapper) = action_space(env.env)
@@ -246,11 +215,18 @@ end
 
 function reward(env::NormalizeWrapper)
     if env.normalize_reward
-        if env.rew_rmv.n < 2
-            return reward(env.env)
+        if env.normalize_reward_by_reward_std
+            divisor = std(env.rew_rmv)
+            if env.rew_rmv.n < 2 || divisor == 0
+                divisor = 1
+            end
         else
-            return clamp((reward(env.env) - mean(env.rew_rmv)) / (std(env.rew_rmv) + env.ϵ), -env.clip_reward, env.clip_reward)
+            divisor = std(env.ret_rmv)
+            if env.ret_rmv.n < 2 || divisor == 0
+                divisor = 1
+            end
         end
+        return clamp(reward(env.env) / (divisor + env.ϵ), -env.clip_reward, env.clip_reward)
     else
         return reward(env.env)
     end
@@ -258,18 +234,112 @@ end
 
 function reset!(env::NormalizeWrapper{T, N, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
     reset!(env.env; rng=rng)
-    increment_rmv!(env.obs_rmv, state(env.env))
+    env.ret = 0
+    env.update_stats && push!(env.obs_rmv, state(env.env))
     nothing
 end
 
 function step!(env::NormalizeWrapper{T, N, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
     step!(env.env, a; rng=rng)
-    increment_rmv!(env.obs_rmv, state(env.env))
-    increment_rmv!(env.rew_rmv, reward(env.env))
+    r::Float64 = reward(env.env)
+    env.ret = env.γ * env.ret + r
+    if env.update_stats
+        push!(env.obs_rmv, state(env.env))
+        push!(env.ret_rmv, env.ret)
+        push!(env.rew_rmv, r)
+    end
     nothing
 end
 
 @inline in_absorbing_state(env::NormalizeWrapper) = in_absorbing_state(env.env)
 @inline truncated(env::NormalizeWrapper) = truncated(env.env)
 
-@inline visualize(env::NormalizeWrapper, args; kwargs...) = visualize(env.env, args...; kwargs...)
+@inline visualize(env::NormalizeWrapper, args...; kwargs...) = visualize(env.env, args...; kwargs...)
+
+
+
+
+"""
+    EvidenceObservationWrapper{T}(env::AbstractMDP{S, A}) where {T <: AbstractFloat, S, A}
+
+A wrapper that emits an evidence vector as the observation. An evidence vector is a concatenation of the latest action, the latest reward, a flag indicating whether the current state marks the start of a new episode, and the current state. This is useful for solving POMDPs. In deep RL, this wrapper is used in conjunction with a recurrent neural network that takes in an evidence vector as input at each step and outputs a policy.
+"""
+
+struct EvidenceObservationWrapper{T, S, A} <: AbstractMDP{Vector{T}, A}
+    env::AbstractMDP{S, A}
+    evidence::Vector{T}  # current evidence vector. An evidence vector is a concatenation of the latest action, the latest reward, a flag indicating whether the current state marks the start of a new episode, and the current state.
+    𝕊::VectorSpace{T}
+    function EvidenceObservationWrapper{T}(env::AbstractMDP{S, A}) where {T <: AbstractFloat, S, A}
+        m, n = size(state_space(env), 1), size(action_space(env), 1)
+        return new{T, S, A}(env, Vector{T}(undef, 1+n+1+m), evidence_state_space(env, T))
+    end
+end
+
+function set_evidence!(env::EvidenceObservationWrapper{T, S, A}, new_episode_flag::Bool, latest_action::A, latest_reward::Float64, latest_state::S) where {T, S, A}
+    m, n = size(state_space(env.env), 1), size(action_space(env.env), 1)
+    env.evidence[n+2] = T(new_episode_flag)
+    if new_episode_flag
+        env.evidence[1:n+1] .= 0
+    else
+        if A == Int
+            env.evidence[1:n] .= 0
+            env.evidence[latest_action] = 1
+        else
+            env.evidence[1:n] .= latest_action
+        end
+        env.evidence[1+n] = latest_reward
+    end
+    if S == Int
+        env.evidence[end-m+1:end] .= 0
+        env.evidence[end-m+latest_state] = 1
+    else
+        env.evidence[end-m+1:end] .= latest_state
+    end
+    nothing
+end
+
+state(env::EvidenceObservationWrapper) = env.evidence
+
+function factory_reset!(env::EvidenceObservationWrapper)
+    factory_reset!(env.env)
+    nothing
+end
+
+function reset!(env::EvidenceObservationWrapper{T, S, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, S, A}
+    reset!(env.env; rng=rng)
+    set_evidence!(env, true, action(env.env), reward(env.env), state(env.env))
+    nothing
+end
+
+function step!(env::EvidenceObservationWrapper{T, S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, S, A}
+    step!(env.env, a; rng=rng)
+    set_evidence!(env, false, action(env.env), reward(env.env), state(env.env))
+    nothing
+end
+
+function evidence_state_space(wrapped_env::AbstractMDP{S, A}, T) where {S, A}
+    flag_low, flag_high = 0, 1
+    if A == Int
+        action_low, action_high = zeros(size(action_space(wrapped_env), 1)), ones(size(action_space(wrapped_env), 1)) # one-hot encoding
+    else
+        action_low, action_high = action_space(wrapped_env).lows, action_space(wrapped_env).highs
+    end
+    reward_low, reward_high = -Inf, Inf
+    if S == Int
+        state_low, state_high = zeros(size(state_space(wrapped_env), 1)), ones(size(state_space(wrapped_env), 1)) # one-hot encoding
+    else
+        state_low, state_high = state_space(wrapped_env).lows, state_space(wrapped_env).highs
+    end
+    lows = convert(Vector{T}, vcat(action_low, reward_low, flag_low, state_low))
+    highs = convert(Vector{T}, vcat(action_high, reward_high, flag_high, state_high))
+    return VectorSpace{T}(lows, highs)
+end
+
+@inline state_space(env::EvidenceObservationWrapper) = env.𝕊
+@inline action_space(env::EvidenceObservationWrapper) = action_space(env.env)
+@inline action_meaning(env::EvidenceObservationWrapper, a) = action_meaning(env.env, a)
+@inline action(env::EvidenceObservationWrapper) = action(env.env)
+@inline reward(env::EvidenceObservationWrapper) = reward(env.env)
+@inline in_absorbing_state(env::EvidenceObservationWrapper) = in_absorbing_state(env.env)
+@inline truncated(env::EvidenceObservationWrapper) = truncated(env.env)
+@inline visualize(env::EvidenceObservationWrapper, args...; kwargs...) = visualize(env.env, args...; kwargs...)

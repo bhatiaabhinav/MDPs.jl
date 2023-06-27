@@ -1,5 +1,6 @@
 module MDPs
 
+include("utils.jl")
 include("space.jl")
 include("mdp.jl")
 include("mdp_generator.jl")
