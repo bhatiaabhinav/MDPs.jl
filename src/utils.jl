@@ -1,5 +1,7 @@
 using Statistics
 
+export RunningMeanVariance
+
 Base.@kwdef mutable struct RunningMeanVariance{T<:AbstractFloat, N}
     const shape::NTuple{N, Int}
     const μ::Array{Float64, N} = zeros(Float64, shape...)

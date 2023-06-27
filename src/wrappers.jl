@@ -1,4 +1,4 @@
-export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper
+export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper, EvidenceObservationWrapper
 import Statistics
 
 """
@@ -167,7 +167,7 @@ env2 = NormalizeWrapper(env2, obs_rmv=obs_rmv, rew_rmv=rew_rmv, ret_rmv=ret_rmv,
 # References
 -  Stable Baselines3 implementation of VecNormalize: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/vec_env/vec_normalize.py)
 """ 
-Base.@kwdef struct NormalizeWrapper{T, N, A} <: AbstractMDP{Array{T, N}, A}
+Base.@kwdef mutable struct NormalizeWrapper{T, N, A} <: AbstractMDP{Array{T, N}, A}
     const env::AbstractMDP{Array{T, N}, A}
     normalize_obs::Bool = true
     normalize_reward::Bool = true

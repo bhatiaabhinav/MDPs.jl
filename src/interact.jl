@@ -198,6 +198,7 @@ The `interact` function returns a tuple containing the returns and lengths of th
 - `hooks...`: the hooks to call during the experiment
 - `max_steps::Real=Inf`: the maximum number of steps to run in the experiment across all episodes
 - `rng::AbstractRNG=Random.GLOBAL_RNG`: the random number generator to use in the experiment
+- `reward_multiplier::Real=1.0`: the reward multiplier to use for recording the rewards. Either a scalar or a callable object that takes no arguments and returns a scalar.
 - `kwargs...`: any additional keyword arguments to pass to the hooks
 
 # returns
@@ -217,7 +218,7 @@ println("Average return: ", sum(returns) / length(returns))
 ```
 ----
 """
-function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real, horizon::Real, max_trials::Real, hooks...; max_steps::Real=Inf, rng::AbstractRNG=Random.GLOBAL_RNG, kwargs...)::Tuple{Vector{Float64}, Vector{Int}} where {S, A}
+function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real, horizon::Real, max_trials::Real, hooks...; max_steps::Real=Inf, rng::AbstractRNG=Random.GLOBAL_RNG, reward_multiplier::Union{Real, Any}=1.0, kwargs...)::Tuple{Vector{Float64}, Vector{Int}} where {S, A}
     steps::Int = 0
     lengths::Vector{Int} = Int[]
     returns::Vector{Float64} = Float64[]
@@ -246,9 +247,12 @@ function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real
             step!(env, a; rng=rng)
             steps += 1
             r = reward(env)
+            r_scale = (reward_multiplier isa Real) ? reward_multiplier : reward_multiplier()
+            r_scale = isnan(r_scale) ? 1.0 : r_scale
+            r *= r_scale
             s′ = Tuple(state(env))
             @debug "experience" s a r s′
-            returns[end] += γ^(lengths[end]) * reward(env)
+            returns[end] += γ^(lengths[end]) * r
             lengths[end] += 1
             foreach(_poststep, hooks)
         end
