@@ -3,7 +3,7 @@ using ProgressMeter
 using DataFrames
 using CSV
 
-export EmptyHook, EmpiricalPolicyEvaluationHook, ProgressMeterHook, LoggingHook, DataRecorderHook, VideoRecorderHook, PlotHook
+export EmptyHook, EmpiricalPolicyEvaluationHook, ProgressMeterHook, LoggingHook, DataRecorderHook, VideoRecorderHook, PlotHook, PlotEverythignHook
 
 
 """
@@ -79,7 +79,9 @@ mutable struct LoggingHook <: AbstractHook
     n::Int
     smooth_over::Int
     loggers::Vector{Base.AbstractLogger}
-    LoggingHook(stats_getter=nothing; n::Int=1, smooth_over::Int=100, loggers::Vector{Base.AbstractLogger}=[Base.current_logger()]) = new(stats_getter, n, smooth_over, loggers)
+    function LoggingHook(stats_getter=nothing; n::Int=1, smooth_over::Int=100, loggers::Vector{Base.AbstractLogger}=Base.AbstractLogger[Base.current_logger()])
+        new(stats_getter, n, smooth_over, loggers)
+    end
 end
 
 function postepisode(slh::LoggingHook; steps, returns, lengths, kwargs...)
@@ -177,7 +179,7 @@ using Colors
 using Luxor
 
 """
-    VideoRecorderHook(dirname; format="mp4", n=1, fps=30)
+    VideoRecorderHook(dirname, n; format="mp4", fps=30)
 
 Hook that records a video of the environment every `n` episodes. The video is saved in the specified `dirname` directory. If the directory already exists, it will be deleted and overwritten. The video format can be either `mp4` or `gif`. The video is recorded at `fps` frames per second. Currently, `fps` is only supported for `gif` format.
 """
@@ -277,6 +279,51 @@ function poststep(ph::PlotHook; kwargs...)
 end
 
 function postexperiment(ph::PlotHook; kwargs...)
+    make_and_save_plot(ph)
+    nothing
+end
+
+
+
+"""
+    PlotEverythignHook(csvs, save_dir, save_format="png"; x=:episodes, dt=1.0, plot_kwargs...)
+
+Hook that plots all columns of the CSV file(s) specified by `csvs` against the `x` column. Each column plot is saved to a different file, having the same name as the column name. The plots are saved to `save_dir` directory in `save_format`. The `dt` parameter specifies the time interval between plot updates. Each plot is generated using `compare_runs`. Any additional keyword arguments are ultimately passed to `compare_runs`.
+"""
+mutable struct PlotEverythignHook <: AbstractHook
+    csvs::Union{Vector{String}, String}
+    save_dir::String
+    save_format::String
+    x::Symbol
+    plot_kwargs::Dict{Symbol, Any}
+    dt::Float64
+    tlast::Float64
+    function PlotEverythignHook(csvs::Union{String, Vector{String}}, save_dir::String, save_format="png"; x=:episodes, dt=1.0, plot_kwargs...)
+        new(csvs, save_dir, save_format, x, plot_kwargs, dt, -Inf)
+    end
+end
+
+function make_and_save_plot(ph::PlotEverythignHook)
+    csvs = ph.csvs isa String ? [ph.csvs] : ph.csvs
+    colnames = union([propertynames(CSV.read(csv, DataFrame)) for csv in csvs]...)
+    for y in colnames
+        y == ph.x && continue
+        compare_runs(csvs...; x=ph.x, y=y, ph.plot_kwargs...)
+        mkpath(dirname(ph.save_dir))
+        savefig(joinpath(ph.save_dir, "$(y).$(ph.save_format)"))
+    end
+    nothing
+end
+
+function poststep(ph::PlotEverythignHook; kwargs...)
+    if time() - ph.tlast > ph.dt
+        make_and_save_plot(ph)
+        ph.tlast = time()
+    end
+    nothing
+end
+
+function postexperiment(ph::PlotEverythignHook; kwargs...)
     make_and_save_plot(ph)
     nothing
 end

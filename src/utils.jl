@@ -68,21 +68,25 @@ end
 dfread(csv_filename, colname) = CSV.read(csv_filename, DataFrame)[:, colname]
 
 """
-    plot_run!(pl::Plots.Plot, csv_filename::String; x::Symbol=:episodes, y::Symbol=:R̄, xlabel=x, ylabel=y, label = replace(basename(csv_filename), ".csv" => ""), plot_kwargs...)
+    plot_run!(pl::Plots.Plot, csv_filename::String; x::Symbol=:episodes, y::Symbol=:R̄, xlabel=x, ylabel=y, label = replace(basename(csv_filename), ".csv" => ""), ignore_error=false, plot_kwargs...)
 
-Plot! a run from a csv file. The csv file should have columns `x` and `y` (default `:episodes` and `:R̄` respectively). The label is automatically generated from the filename. Addtional keyword arguments are passed to `plot!`.
+Plot! a run from a csv file. The csv file should have columns `x` and `y` (default `:episodes` and `:R̄` respectively). The label is automatically generated from the filename. Addtional keyword arguments are passed to `plot!`. If `ignore_error` is true, then the function will not throw an error if the csv file does not have the required columns.
 """
-function plot_run!(pl::Plots.Plot, csv_filename::String; x::Symbol=:episodes, y::Symbol=:R̄, xlabel=x, ylabel=y, label = replace(basename(csv_filename), ".csv" => ""), plot_kwargs...)
+function plot_run!(pl::Plots.Plot, csv_filename::String; x::Symbol=:episodes, y::Symbol=:R̄, xlabel=x, ylabel=y, label = replace(basename(csv_filename), ".csv" => ""), ignore_error=false, plot_kwargs...)
     df = CSV.read(csv_filename, DataFrame)
+    if (x ∉ propertynames(df) || y ∉ propertynames(df))
+        ignore_error && return(pl)
+        throw(ArgumentError("csv file must have columns $x and $y"))
+    end
     plot!(pl, df[:, x], df[:, y]; xlabel=xlabel, ylabel=ylabel, label=label, plot_kwargs...)
     pl
 end
 plot_run!(csv_filename::String; kwargs...) = plot_run!(Plots.current(), csv_filename; kwargs...)
 
 """
-    plot_run(csv_filename::String; x::Symbol=:episodes, y::Symbol=:R̄, xlabel=x, ylabel=y, label = replace(basename(csv_filename), ".csv" => ""), plot_kwargs...)
+    plot_run(csv_filename::String; x::Symbol=:episodes, y::Symbol=:R̄, xlabel=x, ylabel=y, label = replace(basename(csv_filename), ".csv" => ""), ignore_error=false, plot_kwargs...)
 
-Plot a run from a csv file. The csv file should have columns `x` and `y` (default `:episodes` and `:R̄` respectively). The label is automatically generated from the filename. Addtional keyword arguments are passed to `plot!`.
+Plot a run from a csv file. The csv file should have columns `x` and `y` (default `:episodes` and `:R̄` respectively). The label is automatically generated from the filename. Addtional keyword arguments are passed to `plot!`. If `ignore_error` is true, then the function will not throw an error if the csv file does not have the required columns.
 """
 plot_run(args...; kwargs...) = plot_run!(plot(), args...; kwargs...)
 
@@ -95,9 +99,9 @@ function compare_runs(csv_filenames::Vararg{String}; x::Symbol=:episodes, y::Sym
     pl = plot()
     for (i, csv_filename) in enumerate(csv_filenames)
         if labels == :default
-            plot_run!(pl, csv_filename; x=x, y=y)
+            plot_run!(pl, csv_filename; x=x, y=y, ignore_error=true)
         else
-            plot_run!(pl, csv_filename; x=x, y=y, label=labels[i])
+            plot_run!(pl, csv_filename; x=x, y=y, label=labels[i], ignore_error=true)
         end
     end
     plot!(;plot_kwargs...)
