@@ -70,15 +70,16 @@ end
 
 
 """
-    LoggingHook(; stats_getter = nothing, n::Int = 1, smooth_over::Int = 100, loggers::Vector{Base.AbstractLogger} = [Base.current_logger()])
+    LoggingHook(stats_getter = nothing; n::Int = 1, smooth_over::Int = 100, loggers::Vector{Base.AbstractLogger} = [Base.current_logger()])
 
 Hook that logs metrics and statistics using the specified `loggers`, which is a list of `AbstractLogger`s. By default, only `Base.current_logger()` is used, which is usually a `ConsoleLogger`. The metrics/statistics are logged every `n` episodes and include the number of `steps` taken, the number of `episodes` completed, the return `R` of the last episode, the average return `R̄` over the last `smooth_over` episodes, and the length `L` of the last episode. If a `stats_getter` function is provided, the entries in the statistics dictionary returned by the function is also logged. The `stats_getter` function is called with no arguments and must return a dictionary with `Symbol` keys and any values.
 """
-Base.@kwdef mutable struct LoggingHook <: AbstractHook
-    stats_getter = nothing
-    n::Int = 1
-    smooth_over::Int = 100
-    loggers::Vector{Base.AbstractLogger} = [Base.current_logger()]
+mutable struct LoggingHook <: AbstractHook
+    stats_getter
+    n::Int
+    smooth_over::Int
+    loggers::Vector{Base.AbstractLogger}
+    LoggingHook(stats_getter=nothing; n::Int=1, smooth_over::Int=100, loggers::Vector{Base.AbstractLogger}=[Base.current_logger()]) = new(stats_getter, n, smooth_over, loggers)
 end
 
 function postepisode(slh::LoggingHook; steps, returns, lengths, kwargs...)
@@ -99,7 +100,7 @@ function postepisode(slh::LoggingHook; steps, returns, lengths, kwargs...)
 end
 
 """
-    DataRecorderHook(; stats_getter=nothing, smooth_over=100, csv=nothing, overwrite=false)
+    DataRecorderHook(stats_getter = nothing, csv = nothing; smooth_over::Int = 100, overwrite::Bool = false)
 
 Hook that records metrics and statistics in a `DataFrame`. The metrics/statistics include the number of `steps` taken, the number of `episodes` completed, the return `R` of the last episode, the average return `R̄` over the last `smooth_over` episodes, and the length `L` of the last episode. If a `stats_getter` function is provided, the entries in the statistics dictionary returned by the function is also recorded. The `stats_getter` function is called with no arguments and must return a dictionary with `Symbol` keys and any values. If a `csv` file path is provided, the `DataFrame` is written to the file every `n` episodes. If the file already exists, the file name is incremented by appending a number to the file name (e.g. `data.csv` becomes `data.1.csv`), unless `overwrite` is set to `true`.
 """
@@ -108,7 +109,7 @@ mutable struct DataRecorderHook <: AbstractHook
     smooth_over::Int
     csv::Union{Nothing, String}
     data::DataFrame
-    function DataRecorderHook(; stats_getter=nothing, smooth_over=100, csv=nothing, overwrite=false)
+    function DataRecorderHook(stats_getter=nothing, csv=nothing; smooth_over=100,  overwrite=false)
         data = DataFrame(steps=Int[], episodes=Int[], R=Float64[],  R̄=Float64[], L=Int[])
         if !isnothing(csv)
             if isfile(csv) && !overwrite

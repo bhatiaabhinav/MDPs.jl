@@ -80,8 +80,7 @@ plot!(0:100:1000, empirical_policy_evaluation_hook.returns, label="greedy (mean)
 
 Recording Video:
 ```julia
-using MDPVideoRecorder
-interact(mdp, exploration_policy, γ, horizon, 4, VideoRecorder("videos/cliffwalk_ep_greedy", "gif"))  # record 4 episode of the epsilon-greedy policy
+interact(mdp, exploration_policy, γ, horizon, 4, VideoRecorderHook("videos/cliffwalk_ep_greedy", 1; format="gif"))  # record 4 episode of the epsilon-greedy policy
 ```
 
 
@@ -103,6 +102,3 @@ MDP Solvers and Reinforcement Learning Algorithms:
 - [DQN.jl](https://github.com/bhatiaabhinav/DQN.jl): Provides DQN and Double DQN algorithms, including with recurrent networks.
 - [PPO.jl](https://github.com/bhatiaabhinav/PPO.jl): Provides A2C and PPO algorithm, including with recurrent and transformer networks.
 - [SAC.jl](https://github.com/bhatiaabhinav/SAC.jl): Provides SAC and SAC-Discrete algorithm, including with recurrent networks.
-
-Misc:
-- [MDPVideoRecorder.jl](https://github.com/bhatiaabhinav/MDPVideoRecorder.jl): Provides a way to record videos of MDPs that implement the `visualize` method.
