@@ -105,7 +105,7 @@ function compare_runs(csv_filenames::Vararg{String}; x::Symbol=:episodes, y::Sym
 end
 
 """
-    runs_in_dir(dir::String=".", pattern=r"")
+    runs_in_dir(dir::String=".", pattern=r".*.csv")
 
 Returns a list of filenames in a directory that match a pattern. The default pattern is to match all csv files. The filenames are returned as absolute paths.
 """
