@@ -3,7 +3,7 @@ using ProgressMeter
 using DataFrames
 using CSV
 
-export EmptyHook, EmpiricalPolicyEvaluationHook, ProgressMeterHook, LoggingHook, DataRecorderHook, VideoRecorderHook, PlotHook, PlotEverythignHook
+export EmptyHook, EmpiricalPolicyEvaluationHook, ProgressMeterHook, LoggingHook, DataRecorderHook, VideoRecorderHook, PlotHook, PlotEverythingHook
 
 
 """
@@ -50,16 +50,22 @@ end
 """
     ProgressMeterHook(; kwargs...)
 
-Hook that uses a ProgressMeter to display progress as the experiment is running. Progress is defined as the number of episodes completed divided by `max_trials`. The hook can be initialized with any keyword arguments accepted by `ProgressMeter.Progress`.
+Hook that uses a ProgressMeter to display progress as the experiment is running. Progress is defined as the number of episodes completed divided by `max_trials` or the number of steps taken divided by `max_steps`, whichever is larger. The hook can be initialized with any keyword arguments accepted by `ProgressMeter.Progress`.
 """
 struct ProgressMeterHook <: AbstractHook
     progress::Progress
     ProgressMeterHook(; kwargs...) = new(Progress(0; kwargs...))
 end
 
-function postepisode(pmh::ProgressMeterHook; max_trials, kwargs...)
-    pmh.progress.n = max_trials
-    next!(pmh.progress)
+function postepisode(pmh::ProgressMeterHook; max_trials, lengths, max_steps, steps, kwargs...)
+    episodes = length(lengths)
+    if (episodes / max_trials) > (steps / max_steps)
+        pmh.progress.n = max_trials
+        update!(pmh.progress, episodes)
+    else
+        pmh.progress.n = max_steps
+        update!(pmh.progress, steps)
+    end
     nothing
 end
 
@@ -207,26 +213,6 @@ end
 function MDPs.poststep(vr::VideoRecorderHook; env, returns, kwargs...)
     if length(returns) % vr.n == 0
         viz = convert(Matrix{RGB{Colors.N0f8}}, visualize(env; kwargs...))
-        # if vr.display_stats_dict !== nothing
-        #     H, W = size(viz)
-        #     Drawing(W, H, :image)
-        #     Drawing(W, H, :image)
-        #     background("white")
-        #     fontface("courier new")
-        #     fs = 10
-        #     fontsize(fs)
-        #     origin(Point(1, 1))
-        #     items = vr.display_stats_dict()
-        #     for (i, item) in enumerate(items)
-        #         text(string(item), Point(0, fs * i), halign=:left, valign=:top)
-        #     end
-        #     vizstats = convert(Matrix{RGB{Colors.N0f8}}, image_as_matrix())
-        #     if H > W
-        #         viz = hcat(viz, vizstats)
-        #     else
-        #         viz = vcat(viz, vizstats)
-        #     end
-        # end
         push!(vr.frames, viz)
     end
     nothing
@@ -290,7 +276,7 @@ end
 
 Hook that plots all columns of the CSV file(s) specified by `csvs` against the `x` column. Each column plot is saved to a different file, having the same name as the column name. The plots are saved to `save_dir` directory in `save_format`. The `dt` parameter specifies the time interval between plot updates. Each plot is generated using `compare_runs`. Any additional keyword arguments are ultimately passed to `compare_runs`.
 """
-mutable struct PlotEverythignHook <: AbstractHook
+mutable struct PlotEverythingHook <: AbstractHook
     csvs::Union{Vector{String}, String}
     save_dir::String
     save_format::String
@@ -298,14 +284,14 @@ mutable struct PlotEverythignHook <: AbstractHook
     plot_kwargs::Dict{Symbol, Any}
     dt::Float64
     tlast::Float64
-    function PlotEverythignHook(csvs::Union{String, Vector{String}}, save_dir::String, save_format="png"; x=:episodes, dt=1.0, plot_kwargs...)
+    function PlotEverythingHook(csvs::Union{String, Vector{String}}, save_dir::String, save_format="png"; x=:episodes, dt=1.0, plot_kwargs...)
         new(csvs, save_dir, save_format, x, plot_kwargs, dt, -Inf)
     end
 end
 
-function make_and_save_plot(ph::PlotEverythignHook)
+function make_and_save_plot(ph::PlotEverythingHook)
     csvs = ph.csvs isa String ? [ph.csvs] : ph.csvs
-    colnames = union([propertynames(CSV.read(csv, DataFrame)) for csv in csvs]...)
+    colnames = union([(isfile(csv) ? propertynames(CSV.read(csv, DataFrame)) : []) for csv in csvs]...)
     for y in colnames
         y == ph.x && continue
         compare_runs(csvs...; x=ph.x, y=y, ph.plot_kwargs...)
@@ -315,7 +301,7 @@ function make_and_save_plot(ph::PlotEverythignHook)
     nothing
 end
 
-function poststep(ph::PlotEverythignHook; kwargs...)
+function poststep(ph::PlotEverythingHook; kwargs...)
     if time() - ph.tlast > ph.dt
         make_and_save_plot(ph)
         ph.tlast = time()
@@ -323,7 +309,7 @@ function poststep(ph::PlotEverythignHook; kwargs...)
     nothing
 end
 
-function postexperiment(ph::PlotEverythignHook; kwargs...)
+function postexperiment(ph::PlotEverythingHook; kwargs...)
     make_and_save_plot(ph)
     nothing
 end

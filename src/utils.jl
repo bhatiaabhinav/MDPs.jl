@@ -73,6 +73,10 @@ dfread(csv_filename, colname) = CSV.read(csv_filename, DataFrame)[:, colname]
 Plot! a run from a csv file. The csv file should have columns `x` and `y` (default `:episodes` and `:R̄` respectively). The label is automatically generated from the filename. Addtional keyword arguments are passed to `plot!`. If `ignore_error` is true, then the function will not throw an error if the csv file does not have the required columns.
 """
 function plot_run!(pl::Plots.Plot, csv_filename::String; x::Symbol=:episodes, y::Symbol=:R̄, xlabel=x, ylabel=y, label = replace(basename(csv_filename), ".csv" => ""), ignore_error=false, plot_kwargs...)
+    if !isfile(csv_filename)
+        ignore_error && return(pl)
+        throw(ArgumentError("csv file $csv_filename does not exist"))
+    end
     df = CSV.read(csv_filename, DataFrame)
     if (x ∉ propertynames(df) || y ∉ propertynames(df))
         ignore_error && return(pl)
