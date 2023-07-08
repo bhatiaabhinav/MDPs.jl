@@ -32,6 +32,10 @@ end
 @inline Base.in(el::Int, ds::IntegerSpace) = in(el, 1:ds.n)
 @inline Base.Iterators.iterate(ds::IntegerSpace, args...) = iterate(1:ds.n, args...)
 @inline Base.getindex(ds::IntegerSpace, i::Int) = i
+@inline Base.firstindex(ds::IntegerSpace) = 1
+@inline Base.lastindex(ds::IntegerSpace) = ds.n
+@inline Base.keys(ds::IntegerSpace) = 1:ds.n
+@inline Base.indexin(elems, ds::IntegerSpace) = indexin(elems, 1:ds.n)
 
 Random.rand(rng::AbstractRNG, d::Random.SamplerTrivial{IntegerSpace}) = rand(rng, 1:d[].n);
 
@@ -128,6 +132,13 @@ end
 @inline Base.iterate(cs::EnumerableTensorSpace{T, N, M}, iter_state=1) where {T<:AbstractFloat, N, M} = iter_state > length(cs) ? nothing : (copy(selectdim(cs.elements, M, iter_state)), iter_state + 1)
 Random.rand(rng::AbstractRNG, c::EnumerableTensorSpace{T, N, M}) where {T<:AbstractFloat, N, M} = c[rand(rng, 1:length(c))]
 @inline Base.getindex(cs::EnumerableTensorSpace{T, N, M}, i::Int) where {T<:AbstractFloat, N, M} = copy(selectdim(cs.elements, M, i))
+@inline Base.firstindex(cs::EnumerableTensorSpace{T, N, M}) where {T<:AbstractFloat, N, M} = 1
+@inline Base.lastindex(cs::EnumerableTensorSpace{T, N, M}) where {T<:AbstractFloat, N, M} = length(cs)
+@inline Base.keys(cs::EnumerableTensorSpace{T, N, M}) where {T<:AbstractFloat, N, M} = LinearIndices(1:length(cs))
+function Base.indexin(elems::AbstractArray{Array{T, N}}, cs::EnumerableTensorSpace{T, N, M})::Array{Union{Nothing, Int}} where {T<:AbstractFloat, N, M}
+    map(elem -> haskey(cs.elements_to_index, elem) ? cs.elements_to_index[elem] : nothing, elems)
+end
+@inline Base.indexin(elem::Array{T, N}, cs::EnumerableTensorSpace{T, N, M}) where {T<:AbstractFloat, N, M} = indexin(fill(elem), cs)
 
 const EnumerableVectorSpace{T} = EnumerableTensorSpace{T, 1}
 const EnumerableMatrixSpace{T} = EnumerableTensorSpace{T, 2}
