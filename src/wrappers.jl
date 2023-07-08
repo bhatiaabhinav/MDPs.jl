@@ -348,12 +348,67 @@ end
 
 
 
+# """
+#     TimeLimitWrapper(env::AbstractMDP, time_limit::Int)
+
+# A wrapper that _truncates_ an episode after a fixed number of steps. Note that this does not mean that the MDP transitions to an absorbing state after the time limit is reached. At the end of the time limit, `in_absorbing_state` will return false and `truncated` will return true. `in_absorbing_state` _could_ return true if the underlying MDP transitions to an absorbing state coincidently with the time limit being reached.
+# """
+# mutable struct TimeLimitWrapper{S, A} <: AbstractMDP{S, A}
+#     const env::AbstractMDP{S, A}
+#     const time_limit::Int
+#     t::Int
+#     function TimeLimitWrapper(env::AbstractMDP{S, A}, time_limit::Int) where {S, A}
+#         return new{S, A}(env, time_limit, 0)
+#     end
+# end
+
+# @inline state_space(env::TimeLimitWrapper) = state_space(env.env)
+# @inline action_space(env::TimeLimitWrapper) = action_space(env.env)
+# @inline action_meaning(env::TimeLimitWrapper, a) = action_meaning(env.env, a)
+# @inline action_meanings(env::TimeLimitWrapper) = action_meanings(env.env)
+
+# @inline start_state_support(env::TimeLimitWrapper) = start_state_support(env.env)
+# @inline start_state_probability(env::TimeLimitWrapper, s) = start_state_probability(env.env, s)
+# @inline start_state_distribution(env::TimeLimitWrapper, support) = start_state_distribution(env.env, support)
+# @inline transition_support(env::TimeLimitWrapper, s, a) = transition_support(env.env, s, a)
+# @inline transition_probability(env::TimeLimitWrapper, s, a, s′) = transition_probability(env.env, s, a, s′)
+# @inline transition_distribution(env::TimeLimitWrapper, s, a, support) = transition_distribution(env.env, s, a, support)
+# @inline reward(env::TimeLimitWrapper, s, a, s′) = reward(env.env, s, a, s′)
+# @inline is_absorbing(env::TimeLimitWrapper, s) = is_absorbing(env.env, s)
+# @inline visualize(env::TimeLimitWrapper, s; kwargs...) = visualize(env.env, s; kwargs...)
+
+# @inline state(env::TimeLimitWrapper) = state(env.env)
+# @inline action(env::TimeLimitWrapper) = action(env.env)
+# @inline reward(env::TimeLimitWrapper) = reward(env.env)
+# @inline in_absorbing_state(env::TimeLimitWrapper) = in_absorbing_state(env.env)
+# @inline visualize(env::TimeLimitWrapper; kwargs...) = visualize(env.env; kwargs...)
+# truncated(env::TimeLimitWrapper) = env.t >= env.time_limit
+
+# function factory_reset!(env::TimeLimitWrapper)
+#     factory_reset!(env.env)
+#     env.t = 0
+#     nothing
+# end
+
+# function reset!(env::TimeLimitWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
+#     reset!(env.env; rng=rng)
+#     env.t = 0
+#     nothing
+# end
+
+# function step!(env::TimeLimitWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A}
+#     step!(env.env, a; rng=rng)
+#     env.t += 1
+#     nothing
+# end
+
+
 """
     TimeLimitWrapper(env::AbstractMDP, time_limit::Int)
 
 A wrapper that _truncates_ an episode after a fixed number of steps. Note that this does not mean that the MDP transitions to an absorbing state after the time limit is reached. At the end of the time limit, `in_absorbing_state` will return false and `truncated` will return true. `in_absorbing_state` _could_ return true if the underlying MDP transitions to an absorbing state coincidently with the time limit being reached.
 """
-mutable struct TimeLimitWrapper{S, A} <: AbstractMDP{S, A}
+mutable struct TimeLimitWrapper{S, A} <: AbstractWrapper{S, A}
     const env::AbstractMDP{S, A}
     const time_limit::Int
     t::Int
@@ -362,26 +417,6 @@ mutable struct TimeLimitWrapper{S, A} <: AbstractMDP{S, A}
     end
 end
 
-@inline state_space(env::TimeLimitWrapper) = state_space(env.env)
-@inline action_space(env::TimeLimitWrapper) = action_space(env.env)
-@inline action_meaning(env::TimeLimitWrapper, a) = action_meaning(env.env, a)
-@inline action_meanings(env::TimeLimitWrapper) = action_meanings(env.env)
-
-@inline start_state_support(env::TimeLimitWrapper) = start_state_support(env.env)
-@inline start_state_probability(env::TimeLimitWrapper, s) = start_state_probability(env.env, s)
-@inline start_state_distribution(env::TimeLimitWrapper, support) = start_state_distribution(env.env, support)
-@inline transition_support(env::TimeLimitWrapper, s, a) = transition_support(env.env, s, a)
-@inline transition_probability(env::TimeLimitWrapper, s, a, s′) = transition_probability(env.env, s, a, s′)
-@inline transition_distribution(env::TimeLimitWrapper, s, a, support) = transition_distribution(env.env, s, a, support)
-@inline reward(env::TimeLimitWrapper, s, a, s′) = reward(env.env, s, a, s′)
-@inline is_absorbing(env::TimeLimitWrapper, s) = is_absorbing(env.env, s)
-@inline visualize(env::TimeLimitWrapper, s; kwargs...) = visualize(env.env, s; kwargs...)
-
-@inline state(env::TimeLimitWrapper) = state(env.env)
-@inline action(env::TimeLimitWrapper) = action(env.env)
-@inline reward(env::TimeLimitWrapper) = reward(env.env)
-@inline in_absorbing_state(env::TimeLimitWrapper) = in_absorbing_state(env.env)
-@inline visualize(env::TimeLimitWrapper; kwargs...) = visualize(env.env; kwargs...)
 truncated(env::TimeLimitWrapper) = env.t >= env.time_limit
 
 function factory_reset!(env::TimeLimitWrapper)

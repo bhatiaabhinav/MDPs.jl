@@ -1,6 +1,7 @@
 using StatsBase
 
 export AbstractMDP, state_space, action_space, action_meaning, action_meanings, start_state_support, start_state_probability, start_state_distribution, transition_support, transition_probability, transition_distribution, reward, is_absorbing, truncated, state, action, reward, reset!, factory_reset!, step!, in_absorbing_state, visualize
+export AbstractWrapper, unwrapped
 
 """
     AbstractMDP{S, A}
@@ -251,3 +252,53 @@ function visualize(env::AbstractMDP{S, A}; kwargs...) where {S, A}
 end
 
 # -------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+
+
+
+
+"""
+    AbstractWrapper{S, A} <: AbstractMDP{S, A}
+
+An abstract type for wrapping an MDP. This is useful for adding additional functionality to an MDP without having to reimplement the MDP interface. By default, all methods are forwarded to the wrapped MDP. To implement a wrapper, you should implement the `unwrapped` function, which returns the wrapped MDP. By default, this function returns `env.env` assuming that the wrapper is a struct with a field `env` that is the wrapped MDP.
+"""
+abstract type AbstractWrapper{S, A} <: AbstractMDP{S, A} end
+
+"""
+    unwrapped(env::AbstractWrapper)::AbstractMDP
+
+Returns the wrapped MDP. By default, returns `env.env` assuming that the wrapper is a struct with a field `env` that is the wrapped MDP.
+"""
+unwrapped(env::AbstractWrapper)::AbstractMDP = env.env
+
+@inline state_space(env::AbstractWrapper{S, A}) where {S, A} = state_space(unwrapped(env))
+@inline action_space(env::AbstractWrapper{S, A}) where {S, A} = action_space(unwrapped(env))
+@inline action_meaning(env::AbstractWrapper{S, A}, a::A) where {S, A} = action_meaning(unwrapped(env), a)
+@inline action_meanings(env::AbstractWrapper{S, A}) where {S, A} = action_meanings(unwrapped(env))
+@inline start_state_support(env::AbstractWrapper{S, A}) where {S, A} = start_state_support(unwrapped(env))
+@inline start_state_probability(env::AbstractWrapper{S, A}, s::S) where {S, A} = start_state_probability(unwrapped(env), s)
+@inline start_state_distribution(env::AbstractWrapper{S, A}, support) where {S, A} = start_state_distribution(unwrapped(env), support)
+@inline transition_support(env::AbstractWrapper{S, A}, s::S, a::A) where {S, A} = transition_support(unwrapped(env), s, a)
+@inline transition_probability(env::AbstractWrapper{S, A}, s::S, a::A, s′::S) where {S, A} = transition_probability(unwrapped(env), s, a, s′)
+@inline transition_distribution(env::AbstractWrapper{S, A}, s::S, a::A, support) where {S, A} = transition_distribution(unwrapped(env), s, a, support)
+@inline reward(env::AbstractWrapper{S, A}, s::S, a::A, s′::S) where {S, A} = reward(unwrapped(env), s, a, s′)
+@inline is_absorbing(env::AbstractWrapper{S, A}, s::S) where {S, A} = is_absorbing(unwrapped(env), s)
+@inline visualize(env::AbstractWrapper{S, A}, s::S; kwargs...) where {S, A} = visualize(unwrapped(env), s; kwargs...)
+
+@inline state(env::AbstractWrapper{S, A}) where {S, A} = state(unwrapped(env))
+@inline action(env::AbstractWrapper{S, A}) where {S, A} = action(unwrapped(env))
+@inline reward(env::AbstractWrapper{S, A}) where {S, A} = reward(unwrapped(env))
+@inline factory_reset!(env::AbstractWrapper{S, A}) where {S, A} = factory_reset!(unwrapped(env))
+@inline reset!(env::AbstractWrapper{S, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A} = reset!(unwrapped(env); rng=rng)
+@inline step!(env::AbstractWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A} = step!(unwrapped(env), a; rng=rng)
+@inline in_absorbing_state(env::AbstractWrapper{S, A}) where {S, A} = in_absorbing_state(unwrapped(env))
+@inline truncated(env::AbstractWrapper{S, A}) where {S, A} = truncated(unwrapped(env))
+@inline visualize(env::AbstractWrapper{S, A}; kwargs...) where {S, A} = visualize(unwrapped(env); kwargs...)
