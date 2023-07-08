@@ -1,6 +1,6 @@
 using Random
 
-export AbstractSpace, IntegerSpace, TensorSpace, VectorSpace, MatrixSpace, discretize
+export AbstractSpace, IntegerSpace, TensorSpace, VectorSpace, MatrixSpace, EnumerableTensorSpace, EnumerableVectorSpace, EnumerableMatrixSpace, discretize
 
 """
     AbstractSpace{E}
@@ -31,6 +31,7 @@ end
 @inline Base.length(ds::IntegerSpace) = length(1:ds.n)
 @inline Base.in(el::Int, ds::IntegerSpace) = in(el, 1:ds.n)
 @inline Base.Iterators.iterate(ds::IntegerSpace, args...) = iterate(1:ds.n, args...)
+@inline Base.getindex(ds::IntegerSpace, i::Int) = i
 
 Random.rand(rng::AbstractRNG, d::Random.SamplerTrivial{IntegerSpace}) = rand(rng, 1:d[].n);
 
@@ -91,6 +92,48 @@ const VectorSpace{T} = TensorSpace{T, 1}
     Alias for `TensorSpace{T, 2}`.
 """
 const MatrixSpace{T} = TensorSpace{T, 2}
+
+
+"""
+    EnumerableTensorSpace{T, N}(elements::AbstractVector{Array{T, N}})
+
+Construct a `EnumerableTensorSpace` with finite number of elements `elements`. All elements must be of the same size and be unique. For iteration, the elements are returned in the order they are provided in the constructor. The ith element can be accessed with space[i].
+"""
+struct EnumerableTensorSpace{T <: Real, N, M} <: AbstractSpace{Array{T, N}}
+    elements::Array{T, M}  # All elements stored in a single array. M = N + 1
+    lows::Array{T, N}  # Lower bounds of the space
+    highs::Array{T, N}  # Upper bounds of the space
+    elements_to_index::Dict{Array{T, N}, Int}  # Map from element to index in `elements`
+
+    function EnumerableTensorSpace{T, N}(elements::AbstractVector{Array{T, N}}) where {T<:Real, N}
+        @assert length(elements) > 0
+        @assert allequal(size.(elements))
+        lows = min.(elements...)
+        highs = max.(elements...)
+        elements_to_index = Dict{Array{T, N}, Int}()
+        for (i, element) in enumerate(elements)
+            @assert !haskey(elements_to_index, element)  "All elements must be unique"
+            elements_to_index[element] = i
+        end
+        M = N + 1
+        new{T, N, M}(cat(elements...; dims=M), lows, highs, elements_to_index)
+    end
+end
+
+
+@inline Base.size(cs::EnumerableTensorSpace) = size(cs.elements)
+@inline Base.size(cs::EnumerableTensorSpace, dim) = size(cs.elements, dim)
+@inline Base.length(cs::EnumerableTensorSpace) = size(cs.elements)[end]
+@inline Base.in(m::Array{T, N}, cs::EnumerableTensorSpace{T, N}) where {T<:AbstractFloat, N} = haskey(cs.elements_to_index, m)
+@inline Base.iterate(cs::EnumerableTensorSpace{T, N, M}, iter_state=1) where {T<:AbstractFloat, N, M} = iter_state > length(cs) ? nothing : (copy(selectdim(cs.elements, M, iter_state)), iter_state + 1)
+Random.rand(rng::AbstractRNG, c::EnumerableTensorSpace{T, N, M}) where {T<:AbstractFloat, N, M} = c[rand(rng, 1:length(c))]
+@inline Base.getindex(cs::EnumerableTensorSpace{T, N, M}, i::Int) where {T<:AbstractFloat, N, M} = copy(selectdim(cs.elements, M, i))
+
+const EnumerableVectorSpace{T} = EnumerableTensorSpace{T, 1}
+const EnumerableMatrixSpace{T} = EnumerableTensorSpace{T, 2}
+
+
+
 
 
 """
