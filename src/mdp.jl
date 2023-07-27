@@ -18,6 +18,14 @@ Otherwise, the methods `state`, `action`, `reward`, `reset!`, `factory_reset!`, 
 """
 abstract type AbstractMDP{S, A} end
 
+"""
+    AbstractEnv{S, A}
+
+Just an alias for `AbstractMDP{S, A}`
+"""
+const AbstractEnv{S, A} = AbstractMDP{S, A}
+
+
 # necessary:
 
 """
@@ -137,7 +145,7 @@ end
 Visualize the state `s` of the MDP. Returns a Matrix{RGB24} or Matrix{ARGB32} if the state is an image, otherwise returns a string. Throws an error if not implemented.
 """
 function visualize(mdp::AbstractMDP{S, A}, s::S; kwargs...) where {S, A}
-    error("visualization not implemented")
+    error("state visualization not implemented")
 end
 
 
@@ -278,6 +286,7 @@ abstract type AbstractWrapper{S, A} <: AbstractMDP{S, A} end
 Returns the wrapped MDP. By default, returns `env.env` assuming that the wrapper is a struct with a field `env` that is the wrapped MDP.
 """
 unwrapped(env::AbstractWrapper)::AbstractMDP = env.env
+unwrapped(env::AbstractMDP)::AbstractMDP = env.env
 
 @inline state_space(env::AbstractWrapper{S, A}) where {S, A} = state_space(unwrapped(env))
 @inline action_space(env::AbstractWrapper{S, A}) where {S, A} = action_space(unwrapped(env))
@@ -291,7 +300,7 @@ unwrapped(env::AbstractWrapper)::AbstractMDP = env.env
 @inline transition_distribution(env::AbstractWrapper{S, A}, s::S, a::A, support) where {S, A} = transition_distribution(unwrapped(env), s, a, support)
 @inline reward(env::AbstractWrapper{S, A}, s::S, a::A, s′::S) where {S, A} = reward(unwrapped(env), s, a, s′)
 @inline is_absorbing(env::AbstractWrapper{S, A}, s::S) where {S, A} = is_absorbing(unwrapped(env), s)
-@inline visualize(env::AbstractWrapper{S, A}, s::S; kwargs...) where {S, A} = visualize(unwrapped(env), s; kwargs...)
+visualize(env::AbstractWrapper{S, A}, s::S; kwargs...) where {S, A} = error("wrapper state visualization not implemented")
 
 @inline state(env::AbstractWrapper{S, A}) where {S, A} = state(unwrapped(env))
 @inline action(env::AbstractWrapper{S, A}) where {S, A} = action(unwrapped(env))
