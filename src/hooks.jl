@@ -187,7 +187,7 @@ using Luxor
 """
     VideoRecorderHook(save_to::Union{String, Vector}, n=1; format="mp4", fps=30)
 
-Hook that records a video of the environment every `n` episodes. If `save_to` is a string, the video is saved in `save_to` directory. If the directory already exists, it will be deleted and overwritten. The video format can be either `mp4` or `gif`. The video is recorded at `fps` frames per second. Currently, `fps` is only supported for `gif` format. If `save_to` is a vector, then raw data (of the latest episode) will be pushed to the vector. The raw data is a vector of `Matrix{RGB{N0f8}}` frames. The frames can be converted to a video using `FileIO.save("video.mp4", frames, framerate=30)` or `FileIO.save("video.gif", cat(frames..., dims=3), fps=30)`.
+Hook that records a video of the environment every `n` episodes. If `save_to` is a string, the video is saved in `save_to` directory. If the directory already exists, it will be deleted and overwritten. The video format can be either `mp4` or `gif`. The video is recorded at `fps` frames per second. If `save_to` is a vector, then raw data of each recording will be pushed to the vector. The raw data is a vector of `Matrix{RGB{N0f8}}` frames. The frames can be converted to a video using `FileIO.save("video.mp4", frames, framerate=30)` or `FileIO.save("video.gif", cat(frames..., dims=3), fps=30)`. `kwargs` are passed to `visualize` when recording the video.
 """
 struct VideoRecorderHook <: AbstractHook
     save_to::Union{String, Vector}
@@ -195,26 +195,27 @@ struct VideoRecorderHook <: AbstractHook
     n::Int
     fps::Int
     frames::Vector{Matrix{RGB{Colors.N0f8}}}
-    function VideoRecorderHook(save_to::Union{String, Vector}, n=1; format="mp4", fps=30)
+    viz_kwargs::Dict{Symbol, Any}
+    function VideoRecorderHook(save_to::Union{String, Vector}, n=1; format="mp4", fps=30, kwargs...)
         if save_to isa String
             @assert format ∈ ["mp4", "gif"] "Only mp4 or gif are supported"
             rm(save_to, recursive=true, force=true)
             mkpath(save_to)
         end
-        new(save_to, format, n, fps, [])
+        new(save_to, format, n, fps, [], kwargs)
     end
 end
 
 
 function MDPs.preepisode(vr::VideoRecorderHook; env, kwargs...)
     empty!(vr.frames)
-    push!(vr.frames, convert(Matrix{RGB{Colors.N0f8}}, visualize(env; kwargs...)))
+    push!(vr.frames, convert(Matrix{RGB{Colors.N0f8}}, visualize(env; vr.viz_kwargs...)))
     nothing
 end
 
 function MDPs.poststep(vr::VideoRecorderHook; env, returns, kwargs...)
     if length(returns) % vr.n == 0
-        viz = convert(Matrix{RGB{Colors.N0f8}}, visualize(env; kwargs...))
+        viz = convert(Matrix{RGB{Colors.N0f8}}, visualize(env; vr.viz_kwargs...))
         push!(vr.frames, viz)
     end
     nothing

@@ -1,4 +1,4 @@
-export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper, EvidenceObservationWrapper, TimeLimitWrapper
+export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper, EvidenceObservationWrapper, TimeLimitWrapper, Uint8ToFloatWrapper, ReshapeObservationWrapper, FlattenObservationWrapper, FireResetWrapper, VideoRecorderWrapper, ActionRepeatWrapper
 import Statistics
 
 """
@@ -71,55 +71,62 @@ end
 
 
 """
-    FrameStackWrapper{T, A}(env::AbstractMDP{Vector{T}, A}, k::Int=4) where {T, A}
+    FrameStackWrapper(env::AbstractMDP{Array{T, N}, A}, k::Int=4) where {T, N, A}
 
-Wrapper that stacks the last `k` observations of an MDP's state space into a single vector. The state space of the wrapped MDP is a `VectorSpace{T}`. Each element of the new state space is a vector of length `n*k`, where `n` is the length of the states in the wrapped MDP.
+Wrapper that stacks the last `k` observations of an MDP's state space into a single array. The state space of the wrapped MDP is a `TensorSpace{T, N}`. Each element of the new space is of shape (d1, d2, .., dN * k) where (d1, d2, .., dN) is the shape of the states in the wrapped MDP.
 """
-struct FrameStackWrapper{T, A} <: AbstractMDP{Vector{T}, A}
-    env::AbstractMDP{Vector{T}, A}
-    ss::VectorSpace{T}
-    state::Vector{T}
-    function FrameStackWrapper(env::AbstractMDP{Vector{T}, A}, k::Int=4) where {T, A}
-        env_ss = state_space(env)
-        ss = VectorSpace{T}(repeat(env_ss.lows, k), repeat(env_ss.highs, k))
-        return new{T, A}(env, ss, repeat(state(env), k))
+struct FrameStackWrapper{T, N, A} <: AbstractWrapper{Array{T, N}, A}
+    env::AbstractMDP{Array{T, N}, A}
+    𝕊::TensorSpace{T, N}
+    state::Array{T, N}
+    function FrameStackWrapper(env::AbstractMDP{Array{T, N}, A}, k::Int=4) where {T, N, A}
+        @assert k > 0 "k must be positive"
+        if k < 2
+            @warn "For framestack=1, you should simply use the original environment instead of FrameStackWrapper"
+        end
+        sspace::TensorSpace{T, N} = state_space(env)
+        lows = repeat(sspace.lows, outer=(ones(Int, N-1)..., k))
+        highs = repeat(sspace.highs, outer=(ones(Int, N-1)..., k))
+        sspace = TensorSpace{T, N}(lows, highs)
+        s = zeros(T, size(sspace)[1:N])
+        return new{T, N, A}(env, sspace, s)
     end
 end
 
-function factory_reset!(env::FrameStackWrapper)
+function factory_reset!(env::FrameStackWrapper{T, N, A}) where {T, N, A}
     factory_reset!(env.env)
+    env.state .= zeros(T, size(state_space(env))[1:N])
 end
 
-@inline action_space(env::FrameStackWrapper) = action_space(env.env)
-@inline state_space(env::FrameStackWrapper) = env.ss
-@inline action_meaning(env::FrameStackWrapper, a) = action_meaning(env.env, a)
-
-
+@inline state_space(env::FrameStackWrapper) = env.𝕊
 @inline state(env::FrameStackWrapper) = env.state
-@inline action(env::FrameStackWrapper) = action(env.env)
-@inline reward(env::FrameStackWrapper) = reward(env.env)
 
-function reset!(env::FrameStackWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
+function reset!(env::FrameStackWrapper{T, N, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
     reset!(env.env; rng=rng)
-    m = size(state_space(env.env), 1)
-    env.state[1:end-m] .= 0
-    env.state[end-m+1:end] = state(env.env)
+    dN = size(state_space(env.env), N)
+    k = size(state_space(env), N) ÷ dN
+    if k == 1
+        env.state .= state(env.env)
+    else
+        selectdim(env.state, N, 1:(k-1)*dN) .= 0
+        selectdim(env.state, N, (k-1)*dN+1:k*dN) .= state(env.env)
+    end
     nothing
 end
 
-function step!(env::FrameStackWrapper{T, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, A}
+function step!(env::FrameStackWrapper{T, N, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
     step!(env.env, a; rng=rng)
-    m = size(state_space(env.env), 1)
-    env.state[1:end-m] = @view env.state[m+1:end]
-    env.state[end-m+1:end] = state(env.env)
+    
+    dN = size(state_space(env.env), N)
+    k = size(state_space(env), N) ÷ dN
+    if k == 1
+        env.state .= state(env.env)
+    else
+        selectdim(env.state, N, 1:(k-1)*dN) .= selectdim(env.state, N, dN+1:k*dN)
+        selectdim(env.state, N, (k-1)*dN+1:k*dN) .= state(env.env)
+    end
     nothing
 end
-
-@inline in_absorbing_state(env::FrameStackWrapper) = in_absorbing_state(env.env)
-@inline truncated(env::FrameStackWrapper) = truncated(env.env)
-
-@inline visualize(env::FrameStackWrapper, args...; kwargs...) = visualize(env.env, args...; kwargs...)
-
 
 
 """
@@ -346,63 +353,6 @@ end
 
 
 
-
-
-# """
-#     TimeLimitWrapper(env::AbstractMDP, time_limit::Int)
-
-# A wrapper that _truncates_ an episode after a fixed number of steps. Note that this does not mean that the MDP transitions to an absorbing state after the time limit is reached. At the end of the time limit, `in_absorbing_state` will return false and `truncated` will return true. `in_absorbing_state` _could_ return true if the underlying MDP transitions to an absorbing state coincidently with the time limit being reached.
-# """
-# mutable struct TimeLimitWrapper{S, A} <: AbstractMDP{S, A}
-#     const env::AbstractMDP{S, A}
-#     const time_limit::Int
-#     t::Int
-#     function TimeLimitWrapper(env::AbstractMDP{S, A}, time_limit::Int) where {S, A}
-#         return new{S, A}(env, time_limit, 0)
-#     end
-# end
-
-# @inline state_space(env::TimeLimitWrapper) = state_space(env.env)
-# @inline action_space(env::TimeLimitWrapper) = action_space(env.env)
-# @inline action_meaning(env::TimeLimitWrapper, a) = action_meaning(env.env, a)
-# @inline action_meanings(env::TimeLimitWrapper) = action_meanings(env.env)
-
-# @inline start_state_support(env::TimeLimitWrapper) = start_state_support(env.env)
-# @inline start_state_probability(env::TimeLimitWrapper, s) = start_state_probability(env.env, s)
-# @inline start_state_distribution(env::TimeLimitWrapper, support) = start_state_distribution(env.env, support)
-# @inline transition_support(env::TimeLimitWrapper, s, a) = transition_support(env.env, s, a)
-# @inline transition_probability(env::TimeLimitWrapper, s, a, s′) = transition_probability(env.env, s, a, s′)
-# @inline transition_distribution(env::TimeLimitWrapper, s, a, support) = transition_distribution(env.env, s, a, support)
-# @inline reward(env::TimeLimitWrapper, s, a, s′) = reward(env.env, s, a, s′)
-# @inline is_absorbing(env::TimeLimitWrapper, s) = is_absorbing(env.env, s)
-# @inline visualize(env::TimeLimitWrapper, s; kwargs...) = visualize(env.env, s; kwargs...)
-
-# @inline state(env::TimeLimitWrapper) = state(env.env)
-# @inline action(env::TimeLimitWrapper) = action(env.env)
-# @inline reward(env::TimeLimitWrapper) = reward(env.env)
-# @inline in_absorbing_state(env::TimeLimitWrapper) = in_absorbing_state(env.env)
-# @inline visualize(env::TimeLimitWrapper; kwargs...) = visualize(env.env; kwargs...)
-# truncated(env::TimeLimitWrapper) = env.t >= env.time_limit
-
-# function factory_reset!(env::TimeLimitWrapper)
-#     factory_reset!(env.env)
-#     env.t = 0
-#     nothing
-# end
-
-# function reset!(env::TimeLimitWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
-#     reset!(env.env; rng=rng)
-#     env.t = 0
-#     nothing
-# end
-
-# function step!(env::TimeLimitWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A}
-#     step!(env.env, a; rng=rng)
-#     env.t += 1
-#     nothing
-# end
-
-
 """
     TimeLimitWrapper(env::AbstractMDP, time_limit::Int)
 
@@ -436,3 +386,221 @@ function step!(env::TimeLimitWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL
     env.t += 1
     nothing
 end
+
+
+"""
+    Uint8ToFloatWrapper{T}(env::AbstractMDP{Array{UInt8, N}, A}) where {T<:AbstractFloat, N, A}
+
+A wrapper that converts the state space from `Array{UInt8, N}` to `Array{T, N}` where `T <: AbstractFloat`. The values are by dividing by `255` (the maximum value of a `UInt8`).
+"""
+struct Uint8ToFloatWrapper{T<:AbstractFloat, N, A} <: AbstractWrapper{Array{T, N}, A}
+    env::AbstractMDP{Array{UInt8, N}, A}
+    𝕊::TensorSpace{T, N}
+    state::Array{T, N}
+    function Uint8ToFloatWrapper{T}(env::AbstractMDP{Array{UInt8, N}, A}) where {T<:AbstractFloat, N, A}
+        sspace = state_space(env)
+        lows = convert(Array{T, N}, sspace.lows) / 255
+        highs = convert(Array{T, N}, sspace.highs) / 255
+        𝕊 = TensorSpace{T, N}(lows, highs)
+        s = convert(Array{T, N}, state(env)) / 255
+        return new{T, N, A}(env, 𝕊, s)
+    end
+end
+
+@inline state_space(env::Uint8ToFloatWrapper) = env.𝕊
+@inline state(env::Uint8ToFloatWrapper) = env.state
+
+function factory_reset!(env::Uint8ToFloatWrapper{T, N, A}) where {T<:AbstractFloat, N, A}
+    factory_reset!(env.env)
+    env.state .= convert(Array{T, N}, state(env.env)) / 255
+    nothing
+end
+
+function reset!(env::Uint8ToFloatWrapper{T, N, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {T<:AbstractFloat, N, A}
+    reset!(env.env; rng=rng)
+    env.state .= convert(Array{T, N}, state(env.env)) / 255
+    nothing
+end
+
+function step!(env::Uint8ToFloatWrapper{T, N, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {T<:AbstractFloat, N, A}
+    step!(env.env, a; rng=rng)
+    env.state .= convert(Array{T, N}, state(env.env)) / 255
+    nothing
+end
+
+
+"""
+    ReshapeObservationWrapper(env::AbstractMDP{Array{T, M}, A}, newshape::NTuple{N, Int}) where {T, N, M, A}
+
+A wrapper that reshapes the state space from `Array{T, M}` to `Array{T, N}`.
+"""
+struct ReshapeObservationWrapper{T, N, M, A} <: AbstractWrapper{Array{T, N}, A}
+    env::AbstractMDP{Array{T, M}, A}
+    newshape::NTuple{N, Int}
+    function ReshapeObservationWrapper(env::AbstractMDP{Array{T, M}, A}, newshape::NTuple{N, Int}) where {T, N, M, A}
+        return new{T, N, M, A}(env, newshape)
+    end
+end
+
+function state_space(env::ReshapeObservationWrapper{T, N, M, A})::TensorSpace{T, N} where {T, N, M, A}
+    sspace::TensorSpace{T, M} = state_space(env.env)
+    lows, highs = sspace.lows, sspace.highs
+    return TensorSpace{T, N}(reshape(lows, env.newshape), reshape(highs, env.newshape))
+end
+
+@inline state(env::ReshapeObservationWrapper) = reshape(state(env.env), env.newshape)
+
+
+"""
+    FlattenObservationWrapper(env::AbstractMDP{Array{T, N}, A}) where {T, N, A}
+
+A wrapper that reshapes the state space from `Array{T, N}` to `Vector{T}`.
+"""
+FlattenObservationWrapper(env) = ReshapeObservationWrapper(env, (prod(size(state_space(env))[1:end-1]), ))
+
+
+"""
+    FireResetWrapper(env::AbstractMDP{S, A}) where {S, A}
+
+A wrapper that performs the following steps on `reset!`: (1) reset the environment, (2) take a random action, (3) repeat until the game starts i.e., the state changes. This is useful for games like Atari where the game starts only after a specific button is pressed.
+"""
+struct FireResetWrapper{S, A} <: AbstractWrapper{S, A}
+    env::AbstractMDP{S, A}
+    function FireResetWrapper(env::AbstractMDP{S, A}) where {S, A}
+        return new{S, A}(env)
+    end
+end
+
+function reset!(env::FireResetWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
+    reset!(env.env; rng=rng)
+    s0 = state(env.env) |> copy
+    while state(env.env) == s0
+        step!(env.env, rand(action_space(env.env)); rng=rng)  # Try some action to start the game
+        if in_absorbing_state(env.env) || truncated(env.env)
+            reset!(env.env)
+            s0 = state(env.env) |> copy
+        end
+    end
+    nothing
+end
+
+
+"""
+    VideoRecorderWrapper(env::AbstractMDP{S, A}, save_to::Union{String, Nothing}, n=1; format="mp4", fps=30, kwargs...) where {S, A}
+
+Wrapper that records a video of the _wrapped_ environment every `n` episodes. If `save_to` is a string, the video is saved in `save_to` directory. If the directory already exists, it will be deleted and overwritten. The video format can be either `mp4` or `gif`. The video is recorded at `fps` frames per second. If `save_to` is a vector, then raw data of each recording will be pushed to the vector. The raw data is a vector of `Matrix{RGB{N0f8}}` frames. The frames can be converted to a video using `FileIO.save("video.mp4", frames, framerate=30)` or `FileIO.save("video.gif", cat(frames..., dims=3), fps=30)`. `kwargs` are passed to `visualize` when recording the video.
+
+The difference between `VideoRecorderWrapper` and `VideoRecorderHook` is that the former records the video of the _wrapped_ environment, while the latter records the video of the environment being `interact`ed with. For example, if the interaction environment involves repeating an action k times, then the latter will record frames every k steps, while the former, if wrapped over the original environment, will record frames every step. As another use case, this wrapper, in conjunction with `EmpiricalPolicyEvaluationHook`, can be used to record videos of the test environment being played by the policy being evaluated.
+"""
+mutable struct VideoRecorderWrapper{S, A} <: AbstractWrapper{S, A}
+    const env::AbstractMDP{S, A}
+    const save_to::Union{String, Vector}
+    const format::String
+    const n::Int
+    const fps::Int
+    const viz_kwargs::Dict{Symbol, Any}
+
+    episode_counter::Int
+    steps_counter::Int
+    episode_return::Float64
+    frames::Vector{Matrix{RGB{Colors.N0f8}}}
+
+    function VideoRecorderWrapper(env::AbstractEnv{S, A}, save_to::Union{String, Vector}, n=1; format="mp4", fps=30, kwargs...) where {S, A}
+        if save_to isa String
+            @assert format ∈ ["mp4", "gif"] "Only mp4 or gif are supported"
+            rm(save_to, recursive=true, force=true)
+            mkpath(save_to)
+        end
+        return new{S, A}(env, save_to, format, n, fps, kwargs, 0, 0, 0, [])
+    end
+end
+
+function factory_reset!(env::VideoRecorderWrapper)
+    factory_reset!(env.env)
+    env.episode_counter = 0
+    env.steps_counter = 0
+    env.episode_return = 0
+    empty!(env.frames)
+    nothing
+end
+
+function reset!(env::VideoRecorderWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
+    reset!(env.env; rng=rng)
+    env.episode_counter += 1
+    env.episode_return = 0
+    empty!(env.frames)
+    push!(env.frames, convert(Matrix{RGB{Colors.N0f8}}, visualize(env.env; env.viz_kwargs...)))
+    nothing
+end
+
+function step!(env::VideoRecorderWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A}
+    step!(env.env, a; rng=rng)
+    env.steps_counter += 1
+    env.episode_return += reward(env.env)
+    if env.episode_counter % env.n == 0
+        viz = convert(Matrix{RGB{Colors.N0f8}}, visualize(env.env; env.viz_kwargs...))
+        push!(env.frames, viz)
+
+        if in_absorbing_state(env.env) || truncated(env.env)
+            if env.save_to isa String
+                fn = "$(env.save_to)/ep-$(env.episode_counter)-steps-$(env.steps_counter)-return-$(env.episode_return).$(env.format)"
+                if env.format == "mp4"
+                    save(fn, env.frames, framerate=env.fps)
+                elseif env.format == "gif"
+                    save(fn, cat(env.frames..., dims=3), fps=env.fps)
+                end
+            else
+                push!(env.save_to, env.frames)
+            end
+        end
+    end
+    nothing
+end
+
+
+"""
+    ActionRepeatWrapper(env::AbstractEnv, k::Int=4, agg_fn=sum)
+
+Repeat action `k` times and aggregate reward using `agg_fn` (`sum` by default). If the wrapped environment transitions to an absorbing state or is truncated in the process, the wrapper episode ends with the accumulated reward up to that point. Moreover, in such cases, the wrapped environment does not reset automatically, so the user should call `reset!` manually.
+The `agg_fn` can be any function that takes a vector of rewards and returns a scalar e.g., `sum`, `mean`, `median`, `maximum`, `minimum`, etc.
+"""
+mutable struct ActionRepeatWrapper{S, A} <: AbstractWrapper{S, A}
+    const env::AbstractEnv{S, A}
+    const k::Int
+    const agg_fn
+    const rewards::Vector{Float64}
+    reward::Float64
+    function ActionRepeatWrapper(env::AbstractEnv{S, A}, k::Int=4, agg_fn=+) where {S, A}
+        return new{S, A}(env, k, agg_fn, Float64[], 0.0)
+    end
+end
+
+
+function factory_reset!(env::ActionRepeatWrapper)
+    factory_reset!(env.env)
+    env.reward = 0.0
+    nothing
+end
+
+function reset!(env::ActionRepeatWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
+    reset!(env.env; rng=rng)
+    empty!(env.rewards)
+    env.reward = 0.0
+    nothing
+end
+
+function step!(env::ActionRepeatWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A}
+    empty!(env.rewards)
+    for i in 1:env.k
+        step!(env.env, a; rng=rng)
+        r = reward(env.env)
+        push!(env.rewards, r)
+        if in_absorbing_state(env.env) || truncated(env.env)
+            break
+        end
+    end
+    env.reward = env.agg_fn(env.rewards)
+    nothing
+end
+
+@inline reward(env::ActionRepeatWrapper) = env.reward
