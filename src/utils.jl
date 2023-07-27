@@ -82,7 +82,18 @@ function plot_run!(pl::Plots.Plot, csv_filename::String; x::Symbol=:episodes, y:
         ignore_error && return(pl)
         throw(ArgumentError("csv file must have columns $x and $y"))
     end
+    if !(eltype(df[:, y]) <: Real)
+        ignore_error && return(pl)
+        throw(ArgumentError("column $y must be of type Real"))
+    end
     plot!(pl, df[:, x], df[:, y]; xlabel=xlabel, ylabel=ylabel, label=label, plot_kwargs...)
+    ydata = mapreduce(i->pl[1][i][:y], vcat, 1:pl.n);
+    μ,  σ = mean(ydata), std(ydata)
+    ydata_min, ydata_max = minimum(ydata; init=-Inf), maximum(ydata; init=Inf)
+    y_lim_min = max(μ-3σ, ydata_min)
+    y_lim_max = min(μ+3σ, ydata_max)
+    plot!(pl; ylims=(y_lim_min, y_lim_max))
+    plot!(pl; plot_kwargs...)
     pl
 end
 plot_run!(csv_filename::String; kwargs...) = plot_run!(Plots.current(), csv_filename; kwargs...)
@@ -142,6 +153,9 @@ function plot_rungroup!(pl, csv_filenames::Vector{String}; x::Symbol=:episodes, 
     length(csv_filenames) == 0 && return pl
     xgroup = dfread(csv_filenames[1], x)
     ygroup = hcat(dfread.(csv_filenames, y)...)
+    if !(eltype(ygroup) <: Real)
+        throw(ArgumentError("column $y must be of type Real"))
+    end
     errorline!(pl, xgroup, ygroup, xlabel=xlabel, ylabel=ylabel, label=label, errorstyle=errorstyle, plot_kwargs...)
 end
 plot_rungroup!(csv_filenames::Vector{String}; kwargs...) = plot_rungroup!(Plots.current(), csv_filenames; kwargs...)

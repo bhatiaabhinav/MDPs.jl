@@ -78,7 +78,7 @@ end
 """
     LoggingHook(stats_getter = nothing; n::Int = 1, smooth_over::Int = 100, loggers::Vector{Base.AbstractLogger} = [Base.current_logger()])
 
-Hook that logs metrics and statistics using the specified `loggers`, which is a list of `AbstractLogger`s. By default, only `Base.current_logger()` is used, which is usually a `ConsoleLogger`. The metrics/statistics are logged every `n` episodes and include the number of `steps` taken, the number of `episodes` completed, the return `R` of the last episode, the average return `R̄` over the last `smooth_over` episodes, and the length `L` of the last episode. If a `stats_getter` function is provided, the entries in the statistics dictionary returned by the function is also logged. The `stats_getter` function is called with no arguments and must return a dictionary with `Symbol` keys and any values.
+Hook that logs metrics and statistics using the specified `loggers`, which is a list of `AbstractLogger`s. By default, only `Base.current_logger()` is used, which is usually a `ConsoleLogger`. The metrics/statistics are logged every `n` episodes and include the number of `steps` taken, the number of `episodes` completed, the return `R` of the last episode, the average return `R̄` over the last `smooth_over` episodes, and the length `L` of the last episode. If a `stats_getter` function is provided, the entries in the statistics dictionary returned by the function is also logged. The `stats_getter` function is called with no arguments and must return a dictionary with `Symbol` keys and any values. `stats_getter` may be a dictionary as well, in which case the dictionary is used directly, assuming that the values will be updated by the experiment.
 """
 mutable struct LoggingHook <: AbstractHook
     stats_getter
@@ -97,7 +97,7 @@ function postepisode(slh::LoggingHook; steps, returns, lengths, kwargs...)
         R̄ =  length(returns) < min_recs ? mean(returns) : mean(returns[end-min_recs+1:end])
         R = returns[end]
         L = lengths[end]
-        stats::Dict{Symbol, Any} = isnothing(slh.stats_getter) ? Dict{Symbol, Any}() : slh.stats_getter()
+        stats::Dict{Symbol, Any} = isnothing(slh.stats_getter) ? Dict{Symbol, Any}() : (slh.stats_getter isa Dict ? slh.stats_getter : slh.stats_getter())
         for logger in slh.loggers
             Base.with_logger(logger) do
                 @info "stats" episodes=episodes steps=steps R=R R̄=R̄ L=L stats...
@@ -110,7 +110,7 @@ end
 """
     DataRecorderHook(stats_getter = nothing, csv = nothing; smooth_over::Int = 100, overwrite::Bool = false)
 
-Hook that records metrics and statistics in a `DataFrame`. The metrics/statistics include the number of `steps` taken, the number of `episodes` completed, the return `R` of the last episode, the average return `R̄` over the last `smooth_over` episodes, and the length `L` of the last episode. If a `stats_getter` function is provided, the entries in the statistics dictionary returned by the function is also recorded. The `stats_getter` function is called with no arguments and must return a dictionary with `Symbol` keys and any values. If a `csv` file path is provided, the `DataFrame` is written to the file every `n` episodes. If the file already exists, the file name is incremented by appending a number to the file name (e.g. `data.csv` becomes `data.1.csv`), unless `overwrite` is set to `true`.
+Hook that records metrics and statistics in a `DataFrame`. The metrics/statistics include the number of `steps` taken, the number of `episodes` completed, the return `R` of the last episode, the average return `R̄` over the last `smooth_over` episodes, and the length `L` of the last episode. If a `stats_getter` function is provided, the entries in the statistics dictionary returned by the function is also recorded. The `stats_getter` function is called with no arguments and must return a dictionary with `Symbol` keys and any values. `stats_getter` may be a dictionary as well, in which case the dictionary is used directly, assuming that the values will be updated by the experiment. If a `csv` file path is provided, the `DataFrame` is written to the file every `n` episodes. If the file already exists, the file name is incremented by appending a number to the file name (e.g. `data.csv` becomes `data.1.csv`), unless `overwrite` is set to `true`.
 """
 mutable struct DataRecorderHook <: AbstractHook
     stats_getter
@@ -139,7 +139,7 @@ function postepisode(drh::DataRecorderHook; steps, returns, lengths, kwargs...)
     R̄ =  length(returns) < min_recs ? mean(returns) : mean(returns[end-min_recs+1:end])
     R = returns[end]
     L = lengths[end]
-    stats::Dict{Symbol, Any} = isnothing(drh.stats_getter) ? Dict{Symbol, Any}() : drh.stats_getter()
+    stats::Dict{Symbol, Any} = isnothing(drh.stats_getter) ? Dict{Symbol, Any}() : (drh.stats_getter isa Dict ? drh.stats_getter : drh.stats_getter())
     num_cols = ncol(drh.data)
     push!(drh.data, (steps=steps, episodes=episodes, R̄=R̄, R=R, L=L, stats...), promote=true, cols=:union)
     new_num_cols = ncol(drh.data)
@@ -185,21 +185,23 @@ using Colors
 using Luxor
 
 """
-    VideoRecorderHook(dirname, n; format="mp4", fps=30)
+    VideoRecorderHook(save_to::Union{String, Vector}, n=1; format="mp4", fps=30)
 
-Hook that records a video of the environment every `n` episodes. The video is saved in the specified `dirname` directory. If the directory already exists, it will be deleted and overwritten. The video format can be either `mp4` or `gif`. The video is recorded at `fps` frames per second. Currently, `fps` is only supported for `gif` format.
+Hook that records a video of the environment every `n` episodes. If `save_to` is a string, the video is saved in `save_to` directory. If the directory already exists, it will be deleted and overwritten. The video format can be either `mp4` or `gif`. The video is recorded at `fps` frames per second. Currently, `fps` is only supported for `gif` format. If `save_to` is a vector, then raw data (of the latest episode) will be pushed to the vector. The raw data is a vector of `Matrix{RGB{N0f8}}` frames. The frames can be converted to a video using `FileIO.save("video.mp4", frames, framerate=30)` or `FileIO.save("video.gif", cat(frames..., dims=3), fps=30)`.
 """
 struct VideoRecorderHook <: AbstractHook
-    dirname::String
+    save_to::Union{String, Vector}
     format::String
     n::Int
     fps::Int
     frames::Vector{Matrix{RGB{Colors.N0f8}}}
-    function VideoRecorderHook(dirname, n; format="mp4", fps=30)
-        @assert format ∈ ["mp4", "gif"] "Only mp4 or gif are supported"
-        rm(dirname, recursive=true, force=true)
-        mkpath(dirname)
-        new(dirname, format, n, fps, [])
+    function VideoRecorderHook(save_to::Union{String, Vector}, n=1; format="mp4", fps=30)
+        if save_to isa String
+            @assert format ∈ ["mp4", "gif"] "Only mp4 or gif are supported"
+            rm(save_to, recursive=true, force=true)
+            mkpath(save_to)
+        end
+        new(save_to, format, n, fps, [])
     end
 end
 
@@ -220,11 +222,15 @@ end
 
 function MDPs.postepisode(vr::VideoRecorderHook; steps, returns, kwargs...)
     if length(returns) % vr.n == 0
-        fn = "$(vr.dirname)/ep-$(length(returns))-steps-$(steps)-return-$(returns[end]).$(vr.format)"
-        if vr.format == "mp4"
-            save(fn, vr.frames)
-        elseif vr.format == "gif"
-            save(fn, cat(vr.frames..., dims=3), fps=vr.fps)
+        if vr.save_to isa String
+            fn = "$(vr.save_to)/ep-$(length(returns))-steps-$(steps)-return-$(returns[end]).$(vr.format)"
+            if vr.format == "mp4"
+                save(fn, vr.frames, framerate=vr.fps)
+            elseif vr.format == "gif"
+                save(fn, cat(vr.frames..., dims=3), fps=vr.fps)
+            end
+        else
+            push!(vr.save_to, vr.frames)
         end
     end
     nothing
@@ -272,30 +278,39 @@ end
 
 
 """
-    PlotEverythignHook(csvs, save_dir, save_format="png"; x=:episodes, dt=1.0, plot_kwargs...)
+    PlotEverythingHook(csvs::Vector{String}, save_dir::String, save_format="png"; x::Symbol=:episodes, dt::Real=1.0, plot_kwargs...)
+    PlotEverythingHook(scan_dir::String, save_dir::String, save_format="png"; scan_pattern::Union{Regex, String}=r".*.csv", x::Symbol=:episodes, dt::Real=1.0, plot_kwargs...)
 
-Hook that plots all columns of the CSV file(s) specified by `csvs` against the `x` column. Each column plot is saved to a different file, having the same name as the column name. The plots are saved to `save_dir` directory in `save_format`. The `dt` parameter specifies the time interval between plot updates. Each plot is generated using `compare_runs`. Any additional keyword arguments are ultimately passed to `compare_runs`.
+Hook that plots all columns of the CSV file(s) specified by `csvs` (or a `scan_dir` to retrieve CSVs from) against the `x` column. Each column plot is saved to a different file, having the same name as the column name. The plots are saved to `save_dir` directory in `save_format`. The `dt` parameter specifies the time interval between plot updates. Each plot is generated using `compare_runs`. Any additional keyword arguments are ultimately passed to `compare_runs`. NOTE: `scan_dir`, if specified, will be scanned for CSV files every time before generating the plots. A `scan_pattern` can be specified to filter the CSV files. By default, it is set to `r".*.csv"`, which matches all CSV files.
 """
 mutable struct PlotEverythingHook <: AbstractHook
-    csvs::Union{Vector{String}, String}
+    csvs::Vector{String}
+    scan_dir::Union{String, Nothing}
+    scan_pattern::Union{Regex, String, Nothing}
     save_dir::String
     save_format::String
     x::Symbol
     plot_kwargs::Dict{Symbol, Any}
     dt::Float64
     tlast::Float64
-    function PlotEverythingHook(csvs::Union{String, Vector{String}}, save_dir::String, save_format="png"; x=:episodes, dt=1.0, plot_kwargs...)
-        new(csvs, save_dir, save_format, x, plot_kwargs, dt, -Inf)
+    function PlotEverythingHook(csvs::Vector{String}, save_dir::String, save_format="png"; x::Symbol=:episodes, dt::Real=1.0, plot_kwargs...)
+        new(csvs, nothing, nothing, save_dir, save_format, x, plot_kwargs, dt, -Inf)
+    end
+    function PlotEverythingHook(scan_dir::String, save_dir::String, save_format="png"; scan_pattern::Union{Regex, String}=r".*.csv", x::Symbol=:episodes, dt::Real=1.0, plot_kwargs...)
+        csvs = runs_in_dir(scan_dir, scan_pattern)
+        new(csvs, scan_dir, scan_pattern, save_dir, save_format, x, plot_kwargs, dt, -Inf)
     end
 end
 
 function make_and_save_plot(ph::PlotEverythingHook)
-    csvs = ph.csvs isa String ? [ph.csvs] : ph.csvs
-    colnames = union([(isfile(csv) ? propertynames(CSV.read(csv, DataFrame)) : []) for csv in csvs]...)
+    if !isnothing(ph.scan_dir)
+        ph.csvs = runs_in_dir(ph.scan_dir, ph.scan_pattern)
+    end 
+    colnames = union([(isfile(csv) ? propertynames(CSV.read(csv, DataFrame)) : []) for csv in ph.csvs]...)
     for y in colnames
         y == ph.x && continue
-        compare_runs(csvs...; x=ph.x, y=y, ph.plot_kwargs...)
-        mkpath(dirname(ph.save_dir))
+        compare_runs(ph.csvs...; x=ph.x, y=y, ph.plot_kwargs...)
+        mkpath(ph.save_dir)
         savefig(joinpath(ph.save_dir, "$(y).$(ph.save_format)"))
     end
     nothing
