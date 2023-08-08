@@ -1,4 +1,4 @@
-export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper, EvidenceObservationWrapper, TimeLimitWrapper, Uint8ToFloatWrapper, ReshapeObservationWrapper, FlattenObservationWrapper, FireResetWrapper, VideoRecorderWrapper, ActionRepeatWrapper
+export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper, EvidenceObservationWrapper, TimeLimitWrapper, Uint8ToFloatWrapper, ReshapeObservationWrapper, FlattenObservationWrapper, VideoRecorderWrapper, ActionRepeatWrapper, FrameSkipWrapper, DiscretizeStateSpaceWrapper, DiscretizeActionSpaceWrapper
 import Statistics
 
 """
@@ -459,30 +459,7 @@ A wrapper that reshapes the state space from `Array{T, N}` to `Vector{T}`.
 FlattenObservationWrapper(env) = ReshapeObservationWrapper(env, (prod(size(state_space(env))[1:end-1]), ))
 
 
-"""
-    FireResetWrapper(env::AbstractMDP{S, A}) where {S, A}
 
-A wrapper that performs the following steps on `reset!`: (1) reset the environment, (2) take a random action, (3) repeat until the game starts i.e., the state changes. This is useful for games like Atari where the game starts only after a specific button is pressed.
-"""
-struct FireResetWrapper{S, A} <: AbstractWrapper{S, A}
-    env::AbstractMDP{S, A}
-    function FireResetWrapper(env::AbstractMDP{S, A}) where {S, A}
-        return new{S, A}(env)
-    end
-end
-
-function reset!(env::FireResetWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
-    reset!(env.env; rng=rng)
-    s0 = state(env.env) |> copy
-    while state(env.env) == s0
-        step!(env.env, rand(action_space(env.env)); rng=rng)  # Try some action to start the game
-        if in_absorbing_state(env.env) || truncated(env.env)
-            reset!(env.env)
-            s0 = state(env.env) |> copy
-        end
-    end
-    nothing
-end
 
 
 """
@@ -570,10 +547,12 @@ mutable struct ActionRepeatWrapper{S, A} <: AbstractWrapper{S, A}
     const agg_fn
     const rewards::Vector{Float64}
     reward::Float64
-    function ActionRepeatWrapper(env::AbstractEnv{S, A}, k::Int=4, agg_fn=+) where {S, A}
+    function ActionRepeatWrapper(env::AbstractEnv{S, A}, k::Int=4, agg_fn=sum) where {S, A}
         return new{S, A}(env, k, agg_fn, Float64[], 0.0)
     end
 end
+
+const FrameSkipWrapper = ActionRepeatWrapper
 
 
 function factory_reset!(env::ActionRepeatWrapper)
@@ -604,3 +583,91 @@ function step!(env::ActionRepeatWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLO
 end
 
 @inline reward(env::ActionRepeatWrapper) = env.reward
+
+
+"""
+    DiscretizeStateSpaceWrapper(env::AbstractEnv{Array{T, N}, A}, num_bins::Array{Int, N}) where {T, N, A}
+
+Discretize the state space of an environment with continuous state space `Array{T, N}` into a discrete state space `IntegerSpace(n)`, where `n = prod(num_bins)`. The state space is discretized by dividing each dimension index `i₁, ..., i_N` into `num_bins[i₁, ..., i_N]` bins.
+"""
+mutable struct DiscretizeStateSpaceWrapper{T, N, A} <: AbstractWrapper{Int, A}
+    const env::AbstractEnv{Array{T, N}, A}
+    const num_bins::Array{Int, N}   # number of bins per dimension
+    const 𝕊::IntegerSpace           # state space. n = prod(num_bins)
+
+    cumprod_values::Array{Int, N}   # precomputed values for faster computation
+    state::Int                      # current state
+
+    function DiscretizeStateSpaceWrapper(env::AbstractEnv{Array{T, N}, A}, num_bins::Array{Int, N}) where {T, N, A}
+        @assert all(num_bins .> 0) "Number of bins must be positive"
+        n = prod(num_bins)
+        return new{T, N, A}(env, num_bins, IntegerSpace(n), cumprod([1; num_bins[1:end-1]]), 1)
+    end
+end
+
+@inline state_space(env::DiscretizeStateSpaceWrapper) = env.𝕊
+
+function factory_reset!(env::DiscretizeStateSpaceWrapper)
+    factory_reset!(env.env)
+    env.state = 1
+    nothing
+end
+
+function reset!(env::DiscretizeStateSpaceWrapper{T, N, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
+    reset!(env.env; rng=rng)
+    sspace::TensorSpace{T, N} = state_space(env.env)
+    env.state = discretize(state(env.env), sspace.lows, sspace.highs, env.num_bins; precomputed_cumprod=env.cumprod_values, assume_inbounds=true)
+    nothing
+end
+
+function step!(env::DiscretizeStateSpaceWrapper{T, N, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
+    step!(env.env, a; rng=rng)
+    sspace::TensorSpace{T, N} = state_space(env.env)
+    env.state = discretize(state(env.env), sspace.lows, sspace.highs, env.num_bins; precomputed_cumprod=env.cumprod_values, assume_inbounds=true)
+    nothing
+end
+
+
+
+"""
+    DiscretizeActionSpaceWrapper(env::AbstractEnv{S, Array{T, N}}, num_bins::Array{Int, N}) where {S, T, N}
+
+Discretize the action space of an environment with continuous action space `Array{T, N}` into a discrete action space `IntegerSpace(n)`, where `n = prod(num_bins)`. The action space is discretized by dividing each dimension index `i₁, ..., i_N` into `num_bins[i₁, ..., i_N]` bins. When an integer action is taken in the new action space, the corresponding continuous action is the middle of the bin corresponding to the integer action.
+"""
+mutable struct DiscretizeActionSpaceWrapper{S, T, N} <: AbstractWrapper{S, Int}
+    const env::AbstractEnv{S, Array{T, N}}
+    const num_bins::Array{Int, N}   # number of bins per dimension
+    const 𝔸::IntegerSpace           # action space. n = prod(num_bins)
+
+    cumprod_values::Array{Int, N}   # precomputed values for faster computation
+    reverse_mapping::Dict{Int, Array{T, N}}  # reverse mapping from integer action to continuous action
+    action::Int                     # current action
+
+    function DiscretizeActionSpaceWrapper(env::AbstractEnv{S, Array{T, N}}, num_bins::Array{Int, N}) where {S, T, N}
+        @assert all(num_bins .> 0) "Number of bins must be positive"
+        sspace::TensorSpace{T, N} = action_space(env)
+        n = prod(num_bins)
+        reverse_mapping = create_reverse_mapping(sspace.lows, sspace.highs, num_bins)
+        return new{S, T, N}(env, num_bins, IntegerSpace(n), cumprod([1; num_bins[1:end-1]]), reverse_mapping, 1)
+    end
+end
+
+action_space(env::DiscretizeActionSpaceWrapper) = env.𝔸
+
+function factory_reset!(env::DiscretizeActionSpaceWrapper)
+    factory_reset!(env.env)
+    env.action = 1
+    nothing
+end
+
+function reset!(env::DiscretizeActionSpaceWrapper{S, T, N}; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, T, N}
+    reset!(env.env; rng=rng)
+    aspace::TensorSpace{T, N} = action_space(env.env)
+    env.action = discretize(action(env.env), aspace.lows, aspace.highs, env.num_bins; precomputed_cumprod=env.cumprod_values, assume_inbounds=true)
+    nothing
+end
+
+function step!(env::DiscretizeActionSpaceWrapper{S, T, N}, a::Int; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, T, N}
+    step!(env.env, env.reverse_mapping[a]; rng=rng)
+    nothing
+end

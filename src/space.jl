@@ -144,28 +144,76 @@ const EnumerableVectorSpace{T} = EnumerableTensorSpace{T, 1}
 const EnumerableMatrixSpace{T} = EnumerableTensorSpace{T, 2}
 
 
-
-
-
 """
-    discretize(x::Array{T, N}, ts::TensorSpace{T, N}, num_buckets::Vector{Int})::Int
+    discretize(x::Array{T, N}, lows::Array{T, N}, highs::Array{T, N}, num_bins::Array{Int, N}, precomputed_cumprod::Union{Array{Int, N}, Nothing}=nothing)::Int
 
-Discretize `x` into one of `prod(num_buckets)` buckets. `ts` is a `TensorSpace` and `num_buckets` is a vector of length `ndims(x)` specifying the number of buckets in each dimension.
+Discretize a multi-dimensional input `x` into a single integer representing a bucket index.
+
+# Arguments
+- `x::Array{T, N}`: The input vector or N-dimensional array to be discretized. Each element should be a floating-point number.
+- `lows::Array{T, N}`: The lower bounds for each dimension of the input vector/array.
+- `highs::Array{T, N}`: The upper bounds for each dimension of the input vector/array.
+- `num_bins::Array{Int, N}`: The number of bins into which each dimension should be discretized.
+- `precomputed_cumprod::Union{Array{Int, N}, Nothing}`: Optional argument. The precomputed cumulative product of the bucket sizes. If `nothing`, the function computes the cumulative product.
+- `assume_inbounds::Bool`: Optional argument. If `true`, the function does not check that the input vector lies within the specified range. Default: `false
+
+# Returns
+- `::Int`: The index of the bucket into which `x` falls when the space is discretized according to the specified bounds and number of buckets.
+
+# Example
+```julia
+x = [0.6, 0.7]
+lows = [0.0, 0.0]
+highs = [1.0, 1.0]
+buckets = [2, 2]
+println(discretize(x, lows, highs, buckets))  # output: 4
+```
 """
-function discretize(x::Array{T, N}, ts::TensorSpace{T, N}, num_buckets::Vector{Int})::Int where {T<:AbstractFloat, N}
-    return discretize(x, ts.lows, ts.highs, num_buckets)
+function discretize(x::Array{T, N}, lows::Array{T, N}, highs::Array{T, N}, num_bins::Array{Int, N}; precomputed_cumprod::Union{Vector{Int}, Nothing}=nothing, assume_inbounds::Bool=false)::Int where {T<:AbstractFloat, N}
+    if !assume_inbounds  # Check that the input vector lies within the specified range
+        for i in eachindex(x)
+            @assert (lows[i] <= x[i] <= highs[i]) "x[$i] = $(x[i]) is not in the range $(lows[i]) to $(highs[i])]"
+        end
+    end
+    xf64 = convert(Array{Float64, N}, x)  # Convert the input vector to Float64
+    lowsf64 = convert(Array{Float64, N}, lows)  # Convert the lower bounds to Float64
+    highsf64 = convert(Array{Float64, N}, highs)  # Convert the upper bounds to Float64
+    bucket_widths = @. (highsf64 - lowsf64) / num_bins  # Compute the width of each bucket along each dimension
+    posf64 = @. (xf64 - lowsf64) / bucket_widths  # Compute the relative position of the input vector along each dimension
+    posf64 = clamp.(posf64, 0.0, num_bins .- 1e-8) # Clamp the relative position to the range [0, num_bins - 1e-8] to avoid floating-point errors and to handle the edge case where the input vector is equal to the upper bound
+    discrete_vec = floor.(Int, posf64)  # Discretize the input vector
+    cumprod_values = isnothing(precomputed_cumprod) ? cumprod([1; num_bins[1:end-1]]) : precomputed_cumprod  # Use precomputed cumulative product if available, else compute it
+    index = sum(reshape(discrete_vec, :) .* cumprod_values) + 1  # Map the discretized vector to a single integer. Add 1 to avoid 0-indexing
+    return index
 end
 
-"""
-    discretize(x::Array{T, N}, lows::Array{T, N}, highs::Array{T, N}, num_buckets::Vector{Int})::Int
 
-Discretize `x` into one of `prod(num_buckets)` buckets. `lows` and `highs` are the lower and upper bounds of the space. `num_buckets` is a vector of length `ndims(x)` specifying the number of buckets in each dimension.
-"""
-function discretize(x::Array{T, N}, lows::Array{T, N}, highs::Array{T, N}, num_buckets::Vector{Int})::Int where {T<:AbstractFloat, N}
-    x = clamp.((x - lows) ./ (highs - lows), T(1e-9), T(1))
-    x = Int.(ceil.(num_buckets .* x))
-    m = reverse(cumprod(reverse(num_buckets)))
-    x = sum((x.-1)[1:end-1] .* m[2:end]) + x[end]
-    @assert x <= prod(num_buckets)
-    return x
+export create_reverse_mapping
+
+function create_reverse_mapping(lows::Array{T, N}, highs::Array{T, N}, num_bins::Array{Int, N}; precomputed_cumprod::Union{Vector{Int}, Nothing}=nothing)::Dict{Int, Array{T, N}} where {T<:AbstractFloat, N}
+    # Compute the bucket widths
+    bucket_widths = (highs .- lows) ./ num_bins
+    println("bucket_widths = $bucket_widths")
+
+    # Initialize an empty dictionary
+    reverse_map = Dict{Int, Array{T, N}}()
+
+    # Generate all combinations of bucket indices
+    indices = Iterators.product((1:bin for bin in num_bins)...) |> collect
+    println("indices = $indices")
+
+    precomputed_cumprod = isnothing(precomputed_cumprod) ? cumprod([1; num_bins[1:end-1]]) : precomputed_cumprod
+
+    for index_set in indices
+        # Create a representative point for this set of indices (choose the center of the bucket)
+        x = [lows[i] + (index - 0.5) * bucket_widths[i] for (i, index) in enumerate(index_set)]
+        x = reshape(x, size(lows))
+        # Discretize this point to get the action index
+        index = discretize(x, lows, highs, num_bins, precomputed_cumprod=precomputed_cumprod, assume_inbounds=true)
+        println("$index_set. $x -> $index")
+        # Store the mapping from index to representative point
+        reverse_map[index] = x
+    end
+
+    return reverse_map
 end

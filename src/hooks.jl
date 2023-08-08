@@ -15,9 +15,9 @@ struct EmptyHook <: AbstractHook end
 
 
 """
-    EmpiricalPolicyEvaluationHook(π, γ, horizon, n, sample_size; env=nothing)
+    EmpiricalPolicyEvaluationHook(π, γ, horizon, n, sample_size; env=nothing, kwargs...)
 
-Hook that evaluates the policy `π` every `n` episodes in the experiment using `sample_size` trajectory samples. The mean returns are stored in the `returns` list of the hook. The evaluation is done on the environment `env`. If no environment is provided, the environment used in the experiment is used instead. The trajectories are truncated at `horizon` steps and the discount factor for recording returns is `γ`. Internally, the `interact` function is used to generate the trajectories and the mean return is computed as: `mean(interact(env, π, γ, horizon, sample_size)[1])`.
+Hook that evaluates the policy `π` every `n` episodes in the experiment using `sample_size` trajectory samples. The mean returns are stored in the `returns` list of the hook. The evaluation is done on the environment `env`. If no environment is provided, the environment used in the experiment is used instead. The trajectories are truncated at `horizon` steps and the discount factor for recording returns is `γ`. Internally, the `interact` function is used to generate the trajectories and the mean return is computed as: `mean(interact(env, π, γ, horizon, sample_size; kwargs...)[1])`.
 """
 struct EmpiricalPolicyEvaluationHook <: AbstractHook
     π::AbstractPolicy
@@ -26,20 +26,22 @@ struct EmpiricalPolicyEvaluationHook <: AbstractHook
     n::Int
     sample_size::Int
     env::Union{Nothing, AbstractMDP}
+    interct_kwargs
+    show_progress::Bool
     returns::Vector{Float64}
-    EmpiricalPolicyEvaluationHook(π::AbstractPolicy, γ::Real, horizon::Real, n::Int, sample_size::Int; env::Union{Nothing, AbstractMDP}=nothing) = new(π, γ, horizon, n, sample_size, env, Float64[])
+    EmpiricalPolicyEvaluationHook(π::AbstractPolicy, γ::Real, horizon::Real, n::Int, sample_size::Int, show_progress=false; env::Union{Nothing, AbstractMDP}=nothing, kwargs...) = new(π, γ, horizon, n, sample_size, env, kwargs, show_progress, Float64[])
 end
 
 function preexperiment(peh::EmpiricalPolicyEvaluationHook; env, kwargs...)
     _env = isnothing(peh.env) ? env : peh.env
-    push!(peh.returns, mean(interact(_env, peh.π, peh.γ, peh.horizon, peh.sample_size)[1]))
+    push!(peh.returns, mean(interact(_env, peh.π, peh.γ, peh.horizon, peh.sample_size, ProgressMeterHook(; desc="Evaluating policy", enabled=peh.show_progress, color=:blue); peh.interct_kwargs...)[1]))
     nothing
 end
 
 function postepisode(peh::EmpiricalPolicyEvaluationHook; env, returns, kwargs...)
     if length(returns) % peh.n == 0
         _env = isnothing(peh.env) ? env : peh.env
-        push!(peh.returns, mean(interact(_env, peh.π, peh.γ, peh.horizon, peh.sample_size)[1]))
+        push!(peh.returns, mean(interact(_env, peh.π, peh.γ, peh.horizon, peh.sample_size, ProgressMeterHook(; desc="Evaluating policy", enabled=peh.show_progress, color=:blue); peh.interct_kwargs...)[1]))
     end
     nothing
 end

@@ -241,16 +241,15 @@ function interact(env::AbstractMDP{S, A}, policy::AbstractPolicy{S, A}, γ::Real
         foreach(_preepisode, hooks)
         while !in_absorbing_state(env) && !truncated(env) && (lengths[end] < horizon) && (steps < max_steps)
             foreach(_prestep, hooks)
-            s = Tuple(state(env))
-            # println("here")
-            a = policy(rng, state(env))
+            s::S = state(env)
+            a::A = policy(rng, s)
             step!(env, a; rng=rng)
             steps += 1
-            r = reward(env)
-            r_scale = (reward_multiplier isa Real) ? reward_multiplier : reward_multiplier()
+            r::Float64 = reward(env)
+            r_scale::Float64 = (reward_multiplier isa Real) ? reward_multiplier : reward_multiplier()
             r_scale = isnan(r_scale) ? 1.0 : r_scale
             r *= r_scale
-            s′ = Tuple(state(env))
+            s′::S = state(env)
             @debug "experience" s a r s′
             returns[end] += γ^(lengths[end]) * r
             lengths[end] += 1
