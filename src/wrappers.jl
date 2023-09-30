@@ -6,7 +6,7 @@ import Statistics
 
 Wrapper that converts the state representation of an MDP from integers to one-hot vectors. The state space of the wrapped MDP is a `VectorSpace{T}`. Each element of the new state space is a one-hot vector of length `n`, where `n` is the number of states in the wrapped MDP.
 """
-mutable struct OneHotStateReprWrapper{T<:AbstractFloat} <: AbstractMDP{Vector{T}, Int}
+mutable struct OneHotStateReprWrapper{T<:AbstractFloat} <: AbstractWrapper{Vector{T}, Int}
     env::AbstractMDP{Int, Int}
     ss::VectorSpace{T}
     state::Vector{T}
@@ -17,19 +17,8 @@ mutable struct OneHotStateReprWrapper{T<:AbstractFloat} <: AbstractMDP{Vector{T}
     end
 end
 
-function factory_reset!(env::OneHotStateReprWrapper)
-    factory_reset!(env.env)
-end
-
-
-@inline action_space(env::OneHotStateReprWrapper) = action_space(env.env)
 @inline state_space(env::OneHotStateReprWrapper) = env.ss
-@inline action_meaning(env::OneHotStateReprWrapper, a::Int) = action_meaning(env.env, a)
-
-
 state(env::OneHotStateReprWrapper) = env.state
-action(env::OneHotStateReprWrapper) = action(env.env)
-reward(env::OneHotStateReprWrapper) = reward(env.env)
 
 function reset!(env::OneHotStateReprWrapper; rng::AbstractRNG=Random.GLOBAL_RNG)
     reset!(env.env; rng=rng)
@@ -45,10 +34,6 @@ function step!(env::OneHotStateReprWrapper, a::Int; rng::AbstractRNG=Random.GLOB
     nothing
 end
 
-@inline in_absorbing_state(env::OneHotStateReprWrapper) = in_absorbing_state(env.env)
-@inline truncated(env::OneHotStateReprWrapper) = truncated(env.env)
-
-@inline visualize(env::OneHotStateReprWrapper, args...; kwargs...) = visualize(env.env, args...; kwargs...)
 
 function to_onehot(env::OneHotStateReprWrapper{T}, s::Int) where T
     _s = zeros(T, length(state_space(env.env)))
@@ -174,7 +159,7 @@ env2 = NormalizeWrapper(env2, obs_rmv=obs_rmv, rew_rmv=rew_rmv, ret_rmv=ret_rmv,
 # References
 -  Stable Baselines3 implementation of VecNormalize: https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/vec_env/vec_normalize.py)
 """ 
-Base.@kwdef mutable struct NormalizeWrapper{T, N, A} <: AbstractMDP{Array{T, N}, A}
+Base.@kwdef mutable struct NormalizeWrapper{T, N, A} <: AbstractWrapper{Array{T, N}, A}
     const env::AbstractMDP{Array{T, N}, A}
     normalize_obs::Bool = true
     normalize_reward::Bool = true
@@ -193,19 +178,13 @@ end
 function NormalizeWrapper(env::AbstractMDP{Array{T, N}, A}; kwargs...) where {T, N, A}
     NormalizeWrapper{T, N, A}(; env=env, kwargs...)
 end
-function factory_reset!(env::NormalizeWrapper)
-    factory_reset!(env.env) 
-end
 
-@inline action_space(env::NormalizeWrapper) = action_space(env.env)
 function state_space(env::NormalizeWrapper)
     ss = deepcopy(state_space(env.env))
     ss.lows .= -env.clip_obs
     ss.highs .= env.clip_obs
     return ss
 end
-@inline action_meaning(env::NormalizeWrapper, a) = action_meaning(env.env, a)
-@inline action(env::NormalizeWrapper) = action(env.env)
 
 
 function state(env::NormalizeWrapper{T, N, A})::Array{T, N} where {T, N, A}
@@ -258,12 +237,6 @@ function step!(env::NormalizeWrapper{T, N, A}, a::A; rng::AbstractRNG=Random.GLO
     nothing
 end
 
-@inline in_absorbing_state(env::NormalizeWrapper) = in_absorbing_state(env.env)
-@inline truncated(env::NormalizeWrapper) = truncated(env.env)
-
-@inline visualize(env::NormalizeWrapper, args...; kwargs...) = visualize(env.env, args...; kwargs...)
-
-
 
 
 """
@@ -272,7 +245,7 @@ end
 A wrapper that emits an evidence vector as the observation. An evidence vector is a concatenation of the latest action, the latest reward, a flag indicating whether the current state marks the start of a new episode, and the current state. This is useful for solving POMDPs. In deep RL, this wrapper is used in conjunction with a recurrent neural network that takes in an evidence vector as input at each step and outputs a policy.
 """
 
-struct EvidenceObservationWrapper{T, S, A} <: AbstractMDP{Vector{T}, A}
+struct EvidenceObservationWrapper{T, S, A} <: AbstractWrapper{Vector{T}, A}
     env::AbstractMDP{S, A}
     evidence::Vector{T}  # current evidence vector. An evidence vector is a concatenation of the latest action, the latest reward, a flag indicating whether the current state marks the start of a new episode, and the current state.
     𝕊::VectorSpace{T}
@@ -307,11 +280,6 @@ end
 
 state(env::EvidenceObservationWrapper) = env.evidence
 
-function factory_reset!(env::EvidenceObservationWrapper)
-    factory_reset!(env.env)
-    nothing
-end
-
 function reset!(env::EvidenceObservationWrapper{T, S, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, S, A}
     reset!(env.env; rng=rng)
     set_evidence!(env, true, action(env.env), reward(env.env), state(env.env))
@@ -343,14 +311,6 @@ function evidence_state_space(wrapped_env::AbstractMDP{S, A}, T) where {S, A}
 end
 
 @inline state_space(env::EvidenceObservationWrapper) = env.𝕊
-@inline action_space(env::EvidenceObservationWrapper) = action_space(env.env)
-@inline action_meaning(env::EvidenceObservationWrapper, a) = action_meaning(env.env, a)
-@inline action(env::EvidenceObservationWrapper) = action(env.env)
-@inline reward(env::EvidenceObservationWrapper) = reward(env.env)
-@inline in_absorbing_state(env::EvidenceObservationWrapper) = in_absorbing_state(env.env)
-@inline truncated(env::EvidenceObservationWrapper) = truncated(env.env)
-@inline visualize(env::EvidenceObservationWrapper, args...; kwargs...) = visualize(env.env, args...; kwargs...)
-
 
 
 """

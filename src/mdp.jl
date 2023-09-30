@@ -1,6 +1,6 @@
 using StatsBase
 
-export AbstractMDP, AbstractEnv, state_space, action_space, action_meaning, action_meanings, start_state_support, start_state_probability, start_state_distribution, transition_support, transition_probability, transition_distribution, reward, is_absorbing, truncated, state, action, reward, reset!, factory_reset!, step!, in_absorbing_state, visualize
+export AbstractMDP, AbstractEnv, state_space, action_space, action_meaning, action_meanings, start_state_support, start_state_probability, start_state_distribution, transition_support, transition_probability, transition_distribution, reward, is_absorbing, truncated, state, action, reward, reset!, factory_reset!, step!, in_absorbing_state, info, visualize
 export AbstractWrapper, unwrapped
 
 """
@@ -251,6 +251,16 @@ function truncated(env::AbstractMDP)::Bool
 end
 
 """
+    info(env::AbstractMDP)::Dict{Symbol, Any}
+
+Returns a dictionary of additional information about the environment. By default, returns an empty dictionary.
+"""
+function info(env::AbstractMDP)::Dict{Symbol, Any}
+    return Dict{Symbol, Any}()
+end
+
+
+"""
     visualize(env::AbstractMDP{S, A}; kwargs...) where {S, A}
 
 Visualize the current state of the environment. By default, returns `visualize(env, state(env), args...; kwargs...)` assuming that `env` is a mutable struct with a field `state` and `visualize(env, s)` is implemented.
@@ -310,4 +320,5 @@ visualize(env::AbstractWrapper{S, A}, s::S; kwargs...) where {S, A} = error("wra
 @inline step!(env::AbstractWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A} = step!(unwrapped(env), a; rng=rng)
 @inline in_absorbing_state(env::AbstractWrapper{S, A}) where {S, A} = in_absorbing_state(unwrapped(env))
 @inline truncated(env::AbstractWrapper{S, A}) where {S, A} = truncated(unwrapped(env))
+@inline info(env::AbstractWrapper{S, A}) where {S, A} = info(unwrapped(env))
 @inline visualize(env::AbstractWrapper{S, A}; kwargs...) where {S, A} = visualize(unwrapped(env); kwargs...)

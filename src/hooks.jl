@@ -209,9 +209,12 @@ struct VideoRecorderHook <: AbstractHook
 end
 
 
-function MDPs.preepisode(vr::VideoRecorderHook; env, kwargs...)
+function MDPs.preepisode(vr::VideoRecorderHook; env, returns, kwargs...)
     empty!(vr.frames)
-    push!(vr.frames, convert(Matrix{RGB{Colors.N0f8}}, visualize(env; vr.viz_kwargs...)))
+    if length(returns) % vr.n == 0
+        viz = convert(Matrix{RGB{Colors.N0f8}}, visualize(env; vr.viz_kwargs...))
+        push!(vr.frames, viz)
+    end
     nothing
 end
 
