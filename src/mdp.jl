@@ -295,8 +295,16 @@ abstract type AbstractWrapper{S, A} <: AbstractMDP{S, A} end
 
 Returns the wrapped MDP. By default, returns `env.env` assuming that the wrapper is a struct with a field `env` that is the wrapped MDP.
 """
-unwrapped(env::AbstractWrapper)::AbstractMDP = env.env
-unwrapped(env::AbstractMDP)::AbstractMDP = env.env
+function unwrapped(env::AbstractWrapper, deep::Bool=false)::AbstractMDP
+    if deep
+        return unwrapped(env.env, deep)
+    else
+        return env.env
+    end
+end
+function unwrapped(env::AbstractMDP, deep::Bool=false)::AbstractMDP
+    return env
+end
 
 @inline state_space(env::AbstractWrapper{S, A}) where {S, A} = state_space(unwrapped(env))
 @inline action_space(env::AbstractWrapper{S, A}) where {S, A} = action_space(unwrapped(env))

@@ -15,7 +15,7 @@ struct EmptyHook <: AbstractHook end
 
 
 """
-    EmpiricalPolicyEvaluationHook(π, γ, horizon, n, sample_size; env=nothing, kwargs...)
+    EmpiricalPolicyEvaluationHook(π, γ, horizon, n, sample_size, show_progress=false; env=nothing, kwargs...)
 
 Hook that evaluates the policy `π` every `n` episodes in the experiment using `sample_size` trajectory samples. The mean returns are stored in the `returns` list of the hook. The evaluation is done on the environment `env`. If no environment is provided, the environment used in the experiment is used instead. The trajectories are truncated at `horizon` steps and the discount factor for recording returns is `γ`. Internally, the `interact` function is used to generate the trajectories and the mean return is computed as: `mean(interact(env, π, γ, horizon, sample_size; kwargs...)[1])`.
 """
