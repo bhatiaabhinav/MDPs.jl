@@ -244,37 +244,45 @@ end
 
 A wrapper that emits an evidence vector as the observation. An evidence vector is a concatenation of the latest action, the latest reward, a flag indicating whether the current state marks the start of a new episode, and the current state. This is useful for solving POMDPs. In deep RL, this wrapper is used in conjunction with a recurrent neural network that takes in an evidence vector as input at each step and outputs a policy.
 """
-
 struct EvidenceObservationWrapper{T, S, A} <: AbstractWrapper{Vector{T}, A}
     env::AbstractMDP{S, A}
     evidence::Vector{T}  # current evidence vector. An evidence vector is a concatenation of the latest action, the latest reward, a flag indicating whether the current state marks the start of a new episode, and the current state.
     𝕊::VectorSpace{T}
     function EvidenceObservationWrapper{T}(env::AbstractMDP{S, A}) where {T <: AbstractFloat, S, A}
+        @assert S == Int || S <: Vector
+        @assert A == Int || A <: Vector
         m, n = size(state_space(env), 1), size(action_space(env), 1)
         return new{T, S, A}(env, Vector{T}(undef, 1+n+1+m), evidence_state_space(env, T))
     end
 end
 
-function set_evidence!(env::EvidenceObservationWrapper{T, S, A}, new_episode_flag::Bool, latest_action::A, latest_reward::Float64, latest_state::S) where {T, S, A}
-    m, n = size(state_space(env.env), 1), size(action_space(env.env), 1)
-    env.evidence[n+2] = T(new_episode_flag)
+function set_evidence!(evidence::AbstractVector{T}, new_episode_flag::Bool, latest_action::A, latest_reward::Float64, latest_state::S, sspace, aspace) where {T, S, A}
+    m, n = size(sspace, 1), size(aspace, 1)
+    evidence[n+2] = T(new_episode_flag)
     if new_episode_flag
-        env.evidence[1:n+1] .= 0
+        evidence[1:n+1] .= 0
     else
         if A == Int
-            env.evidence[1:n] .= 0
-            env.evidence[latest_action] = 1
+            evidence[1:n] .= 0
+            latest_action = latest_action == 0 ? 1 : latest_action
+            evidence[latest_action] = 1
         else
-            env.evidence[1:n] .= latest_action
+            evidence[1:n] .= latest_action
         end
-        env.evidence[1+n] = latest_reward
+        evidence[1+n] = latest_reward
     end
     if S == Int
-        env.evidence[end-m+1:end] .= 0
-        env.evidence[end-m+latest_state] = 1
+        latest_state = latest_state == 0 ? 1 : latest_state
+        evidence[end-m+1:end] .= 0
+        evidence[end-m+latest_state] = 1
     else
-        env.evidence[end-m+1:end] .= latest_state
+        evidence[end-m+1:end] .= latest_state
     end
+    nothing
+end
+
+function set_evidence!(env::EvidenceObservationWrapper{T, S, A}, new_episode_flag::Bool, latest_action::A, latest_reward::Float64, latest_state::S) where {T, S, A}
+    set_evidence!(env.evidence, new_episode_flag, latest_action, latest_reward, latest_state, state_space(env.env), action_space(env.env))
     nothing
 end
 
@@ -293,17 +301,21 @@ function step!(env::EvidenceObservationWrapper{T, S, A}, a::A; rng::AbstractRNG=
 end
 
 function evidence_state_space(wrapped_env::AbstractMDP{S, A}, T) where {S, A}
+    return evidence_state_space(state_space(wrapped_env), action_space(wrapped_env), T)
+end
+
+function evidence_state_space(wrapped_env_sspace, wrapped_env_aspace, T)
     flag_low, flag_high = 0, 1
-    if A == Int
-        action_low, action_high = zeros(size(action_space(wrapped_env), 1)), ones(size(action_space(wrapped_env), 1)) # one-hot encoding
+    if wrapped_env_aspace isa IntegerSpace
+        action_low, action_high = zeros(size(wrapped_env_aspace, 1)), ones(size(wrapped_env_aspace, 1)) # one-hot encoding
     else
-        action_low, action_high = action_space(wrapped_env).lows, action_space(wrapped_env).highs
+        action_low, action_high = wrapped_env_aspace.lows, wrapped_env_aspace.highs
     end
     reward_low, reward_high = -Inf, Inf
-    if S == Int
-        state_low, state_high = zeros(size(state_space(wrapped_env), 1)), ones(size(state_space(wrapped_env), 1)) # one-hot encoding
+    if wrapped_env_sspace isa IntegerSpace
+        state_low, state_high = zeros(size(wrapped_env_sspace, 1)), ones(size(wrapped_env_sspace, 1)) # one-hot encoding
     else
-        state_low, state_high = state_space(wrapped_env).lows, state_space(wrapped_env).highs
+        state_low, state_high = wrapped_env_sspace.lows, wrapped_env_sspace.highs
     end
     lows = convert(Vector{T}, vcat(action_low, reward_low, flag_low, state_low))
     highs = convert(Vector{T}, vcat(action_high, reward_high, flag_high, state_high))
