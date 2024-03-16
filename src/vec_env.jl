@@ -165,6 +165,7 @@ function reset!(v::VecEnv{S, A, E}, reset_all::Bool=true; rng::AbstractRNG=Rando
             end
         end
     else
+        # println("In reset of VecEnv")
         for env in v.envs
             if reset_all || (in_absorbing_state(env) || truncated(env))
                 reset!(env, rng=rng)

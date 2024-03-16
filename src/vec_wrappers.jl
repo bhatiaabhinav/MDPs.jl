@@ -59,15 +59,20 @@ function reward(env::VecNormalizeWrapper)::Vector{Float64}
     end
 end
 
-function reset!(env::VecNormalizeWrapper{T, N, A}, reset_all::Bool=true; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
-    need_reset = in_absorbing_state(env.env) .|| truncated(env.env)
-    for i in 1:num_envs(env)
-        if need_reset[i] || reset_all
-            env.rets[i] = 0
-            env.update_stats && push!(env.obs_rmv, selectdim(state(env.env), N+1, i))
+function MDPs.reset!(env::VecNormalizeWrapper{T, N, A}, reset_all::Bool=true; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
+    env_in_absorbing_state = in_absorbing_state(env.env)
+    env_truncated = truncated(env.env)
+    need_reset = env_in_absorbing_state .|| env_truncated
+    reset!(env.env, reset_all; rng=rng)
+    if env.update_stats
+        env_state = state(env.env)
+        for i in 1:num_envs(env)
+            if need_reset[i] || reset_all
+                env.rets[i] = 0
+                push!(env.obs_rmv, selectdim(env_state, N+1, i))
+            end
         end
     end
-    reset!(env.env, reset_all; rng=rng)
     nothing
 end
 
