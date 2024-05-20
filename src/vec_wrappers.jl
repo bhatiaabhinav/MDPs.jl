@@ -69,7 +69,7 @@ function MDPs.reset!(env::VecNormalizeWrapper{T, N, A}, reset_all::Bool=true; rn
         for i in 1:num_envs(env)
             if need_reset[i] || reset_all
                 env.rets[i] = 0
-                push!(env.obs_rmv, selectdim(env_state, N+1, i))
+                env.normalize_obs && push!(env.obs_rmv, selectdim(env_state, N+1, i))
             end
         end
     end
@@ -79,12 +79,12 @@ end
 function step!(env::VecNormalizeWrapper{T, N, A}, a; rng::AbstractRNG=Random.GLOBAL_RNG) where {T, N, A}
     step!(env.env, a; rng=rng)
     rs::Vector{Float64} = reward(env.env)
-    env.rets = env.γ * env.rets + rs
+    env.rets .= env.γ * env.rets + rs
     if env.update_stats
         for i in 1:num_envs(env)
             push!(env.rew_rmv, rs[i])
             push!(env.ret_rmv, env.rets[i])
-            push!(env.obs_rmv, selectdim(state(env.env), N+1, i))
+            env.normalize_obs && push!(env.obs_rmv, selectdim(state(env.env), N+1, i))
         end
     end
     nothing

@@ -1,4 +1,4 @@
-export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper, EvidenceObservationWrapper, TimeLimitWrapper, Uint8ToFloatWrapper, ReshapeObservationWrapper, FlattenObservationWrapper, VideoRecorderWrapper, ActionRepeatWrapper, FrameSkipWrapper, DiscretizeStateSpaceWrapper, DiscretizeActionSpaceWrapper
+export OneHotStateReprWrapper, FrameStackWrapper, NormalizeWrapper, EvidenceObservationWrapper, TimeLimitWrapper, AsInfiniteHorizonMDPWrapper, Uint8ToFloatWrapper, ReshapeObservationWrapper, FlattenObservationWrapper, VideoRecorderWrapper, ActionRepeatWrapper, FrameSkipWrapper, DiscretizeStateSpaceWrapper, DiscretizeActionSpaceWrapper, DeterministicResetWrapper, ReduceDiscreteActionSpaceWrapper
 import Statistics
 
 """
@@ -361,21 +361,69 @@ end
 
 
 """
-    Uint8ToFloatWrapper{T}(env::AbstractMDP{Array{UInt8, N}, A}) where {T<:AbstractFloat, N, A}
+    AsInfiniteHorizonMDPWrapper(env::AbstractMDP{S, A}, max_steps::Real) where {S, A}
 
-A wrapper that converts the state space from `Array{UInt8, N}` to `Array{T, N}` where `T <: AbstractFloat`. The values are by dividing by `255` (the maximum value of a `UInt8`).
+This wrapper makes the environment an infinite-horizon MDP by having the absorbing state loop back to itself with zero reward i.e., once the environment transitions to an absorbing state, all subsequent calls to `step!` will do nothing (environment will stay in the same state) and yield a reward of `0.0`. The call to `in_absorbing_state(wrapper)` will always return `false` even though `in_absorbing_state(env)` may return `true`. An episode is truncated after `max_steps` steps or when the environment truncates (i.e., `truncated(env)` returns `true`), whichever comes first.
+
+Note: The optimal policy for the wrapped environment is the same as the optimal policy for the original environment.
+"""
+mutable struct AsInfiniteHorizonMDPWrapper{S, A} <: AbstractWrapper{S, A}
+    const env::AbstractMDP{S, A}
+    const max_steps::Real
+    env_done::Bool
+    reward::Float64
+    step_count::Int
+    function AsInfiniteHorizonMDPWrapper(env::AbstractMDP{S, A}, max_steps::Real) where {S, A}
+        return new{S, A}(env, max_steps, false, 0.0, 0)
+    end
+end
+
+MDPs.in_absorbing_state(wrapper::AsInfiniteHorizonMDPWrapper) = false
+MDPs.truncated(wrapper::AsInfiniteHorizonMDPWrapper) = wrapper.step_count >= wrapper.max_steps || truncated(wrapper.env)
+
+function MDPs.reset!(wrapper::AsInfiniteHorizonMDPWrapper{S, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A}
+    reset!(wrapper.env; rng=rng)
+    wrapper.env_done = false
+    wrapper.reward = 0.0
+    wrapper.step_count = 0
+    nothing
+end
+
+function MDPs.step!(wrapper::AsInfiniteHorizonMDPWrapper{S, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, A}
+    if wrapper.env_done
+        wrapper.reward = 0.0
+    else
+        step!(wrapper.env, a; rng=rng)
+        wrapper.reward = reward(wrapper.env)
+        wrapper.env_done = in_absorbing_state(wrapper.env)
+    end
+    wrapper.step_count += 1
+    nothing
+end
+
+function MDPs.reward(wrapper::AsInfiniteHorizonMDPWrapper)
+    return wrapper.reward
+end
+
+
+"""
+    Uint8ToFloatWrapper{T}(env::AbstractMDP{Array{UInt8, N}, A}, normalize_by::Real=255) where {T<:AbstractFloat, N, A}
+
+A wrapper that converts the state space from `Array{UInt8, N}` to `Array{T, N}` where `T <: AbstractFloat`. The values are normalized by dividing by `normalize_by` (default = 255).
 """
 struct Uint8ToFloatWrapper{T<:AbstractFloat, N, A} <: AbstractWrapper{Array{T, N}, A}
     env::AbstractMDP{Array{UInt8, N}, A}
+    normalize_by::T
     𝕊::TensorSpace{T, N}
     state::Array{T, N}
-    function Uint8ToFloatWrapper{T}(env::AbstractMDP{Array{UInt8, N}, A}) where {T<:AbstractFloat, N, A}
+    function Uint8ToFloatWrapper{T}(env::AbstractMDP{Array{UInt8, N}, A}, normalize_by::Real=255) where {T<:AbstractFloat, N, A}
         sspace = state_space(env)
-        lows = convert(Array{T, N}, sspace.lows) / 255
-        highs = convert(Array{T, N}, sspace.highs) / 255
+        normalize_by = T(normalize_by)
+        lows = convert(Array{T, N}, sspace.lows) / normalize_by
+        highs = convert(Array{T, N}, sspace.highs) / normalize_by
         𝕊 = TensorSpace{T, N}(lows, highs)
-        s = convert(Array{T, N}, state(env)) / 255
-        return new{T, N, A}(env, 𝕊, s)
+        s = convert(Array{T, N}, state(env)) / normalize_by
+        return new{T, N, A}(env, normalize_by, 𝕊, s)
     end
 end
 
@@ -384,19 +432,19 @@ end
 
 function factory_reset!(env::Uint8ToFloatWrapper{T, N, A}) where {T<:AbstractFloat, N, A}
     factory_reset!(env.env)
-    env.state .= convert(Array{T, N}, state(env.env)) / 255
+    env.state .= convert(Array{T, N}, state(env.env)) / env.normalize_by
     nothing
 end
 
 function reset!(env::Uint8ToFloatWrapper{T, N, A}; rng::AbstractRNG=Random.GLOBAL_RNG) where {T<:AbstractFloat, N, A}
     reset!(env.env; rng=rng)
-    env.state .= convert(Array{T, N}, state(env.env)) / 255
+    env.state .= convert(Array{T, N}, state(env.env)) / env.normalize_by
     nothing
 end
 
 function step!(env::Uint8ToFloatWrapper{T, N, A}, a::A; rng::AbstractRNG=Random.GLOBAL_RNG) where {T<:AbstractFloat, N, A}
     step!(env.env, a; rng=rng)
-    env.state .= convert(Array{T, N}, state(env.env)) / 255
+    env.state .= convert(Array{T, N}, state(env.env)) / env.normalize_by
     nothing
 end
 
@@ -641,5 +689,45 @@ end
 
 function step!(env::DiscretizeActionSpaceWrapper{S, T, N}, a::Int; rng::AbstractRNG=Random.GLOBAL_RNG) where {S, T, N}
     step!(env.env, env.reverse_mapping[a]; rng=rng)
+    nothing
+end
+
+
+
+"""
+    DeterministicResetWrapper(env::AbstractEnv{S, A}, reset_seed::Int)
+
+Wrapper that resets the environment to the same initial state every time `reset!` is called, based on the provided `reset_seed`. This is achieved by ignoring the `rng` argument in `reset!` and using a random number generator seeded with `reset_seed` to reset the environment during `reset!`. Concretely, `reset!(wrapper, rng=rng)` is equivalent to `reset!(env, rng=Xoshiro(reset_seed))`.
+"""
+struct DeterministicResetWrapper{S, A} <: AbstractWrapper{S, A}
+    env::AbstractEnv{S, A}
+    reset_seed::Int
+    function DeterministicResetWrapper(env::AbstractEnv{S, A}, reset_seed::Int) where {S, A}
+        return new{S, A}(env, reset_seed)
+    end
+end
+
+reset!(env::DeterministicResetWrapper; rng::AbstractRNG=Random.GLOBAL_RNG) = reset!(env.env, rng=Xoshiro(env.reset_seed))
+
+
+"""
+    ReduceDiscreteActionSpaceWrapper(env::AbstractEnv{S, Int}, allow_actions::Vector{Int})
+
+Wrapper that reduces the action space of an environment with an `IntegerSpace` to a subset of actions specified by `allow_actions` vector. The new action space is `IntegerSpace(length(allow_actions))`. For example, if `allow_actions = [1, 3, 4]`, then the new action space is `IntegerSpace(3)`, and the actions `1, 2, 3` in the new action space correspond to the actions `1, 3, 4` in the original action space.
+"""
+struct ReduceDiscreteActionSpaceWrapper{S} <: AbstractWrapper{S, Int}
+    env::AbstractEnv{S, Int}
+    allow_actions::Vector{Int}
+    𝔸::IntegerSpace
+    function ReduceDiscreteActionSpaceWrapper(env::AbstractEnv{S, Int}, allow_actions::AbstractVector{Int}) where S
+        @assert all(1 .<= allow_actions .<= length(action_space(env))) "Invalid action indices"
+        return new{S}(env, allow_actions, IntegerSpace(length(allow_actions)))
+    end
+end
+
+action_space(env::ReduceDiscreteActionSpaceWrapper) = env.𝔸
+
+function step!(env::ReduceDiscreteActionSpaceWrapper{S}, a::Int; rng::AbstractRNG=Random.GLOBAL_RNG) where S
+    step!(env.env, env.allow_actions[a]; rng=rng)
     nothing
 end
