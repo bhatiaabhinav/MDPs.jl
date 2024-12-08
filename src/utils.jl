@@ -195,3 +195,30 @@ function compare_dirs_rungroups(dirs::Vararg{String}; pattern=r".*.csv", kwargs.
     csvgroups = [runs_in_dir(dir, pattern) for dir in dirs]
     compare_rungroups(csvgroups...; labels=dirs, kwargs...)
 end
+
+
+"""
+    to_string_dict(dict::Dict{Symbol, Any})::Dict{String, Any}
+
+Convert a dictionary with keys of type `Symbol` to a dictionary with keys of type `String`.
+"""
+function to_string_dict(dict)
+    return Dict{String, Any}(string(k)=>v for (k, v) in dict)
+end
+
+"""
+    smoothen(x::Vector{T}, window_size::Int)::Vector{T} where {T <: AbstractFloat}
+
+Smoothen a vector `x` using a running mean with a window size of `window_size`.
+"""
+function smoothen(x::Vector{T}, window_size::Int)::Vector{T} where {T <: AbstractFloat}
+    y = similar(x)
+    for i in 1:length(x)
+        if i <= window_size
+            y[i] = mean(x[1:i])
+        else
+            y[i] = mean(x[i-window_size+1:i])
+        end
+    end
+    return y
+end

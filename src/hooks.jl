@@ -3,7 +3,7 @@ using ProgressMeter
 using DataFrames
 using CSV
 
-export EmptyHook, EmpiricalPolicyEvaluationHook, ProgressMeterHook, LoggingHook, DataRecorderHook, VideoRecorderHook, PlotHook, PlotEverythingHook
+export EmptyHook, EmpiricalPolicyEvaluationHook, ProgressMeterHook, LoggingHook, DataRecorderHook, VideoRecorderHook, PlotHook, PlotEverythingHook, WandbHook, monitor_video_dir, SleepHook, GCHook, EveryNEpisodesHook, EveryNStepsHook, EveryNSecondsHook
 
 
 """
@@ -334,3 +334,183 @@ function postexperiment(ph::PlotEverythingHook; kwargs...)
     make_and_save_plot(ph)
     nothing
 end
+
+
+"""
+    WandbHook(wandb, project, name; config=nothing, stats_getter=nothing, n=1, video_file_getter=nothing, smooth_over=100)
+
+Hook that logs metrics and statistics to Weights & Biases (wandb.ai). The `wandb` object is the wandb PythonCall or PyCall module. The `project` and `name` are the project and run names, respectively. The `config` dictionary is logged as the configuration of the run. A wandb run is automatically initialized and finished at the beginning and end of the experiment, respectively. The `stats_getter` may be a dictionary or a function and is read or called every `n` episodes to get the statistics to log. In addition to the statistics returned by the `stats_getter`, the number of `steps` taken, the number of `episodes` completed, the return `R` of the last episode, the average return `R̄` over the last `smooth_over` episodes, and the length `L` of the last episode are logged. The `video_file_getter` function is called every episode with the episode number as an argument to get the file path to a video. This video is uploaded to wandb. If it returns nothing, no video is uploaded. As a convienience, the `monitor_video_dir(video_dir)` function (e.g., `video_file_getter=monitor_video_dir(video_dir)`) can be used to create a `video_file_getter` that monitors a directory for new videos created by `VideoRecorderHook`. The `smooth_over` parameter specifies the number of episodes to smooth over when computing the average return.
+"""
+struct WandbHook <: AbstractHook
+    wandb  # pyobject
+    project::String
+    name::String
+    config::Dict{Symbol, Any}
+    stats_getter # some callable returning a stats dictionary or a stats dictionary itself
+    n::Int
+    video_file_getter  # some callable returning a file path to a video. This video will be uploaded to wandb. The function should return nothing if no video is to be uploaded. The function accepts the episode number as an argument.
+    smooth_over::Int
+end
+
+function WandbHook(wandb, project, name; config=Dict(), stats_getter=nothing, n=1, video_file_getter=nothing, smooth_over=100)
+    return WandbHook(wandb, project, name, config, stats_getter, n, video_file_getter, smooth_over)
+end
+
+function preexperiment(wdb::WandbHook; kwargs...)
+    project = replace(wdb.project, "/" => "-")  # wandb doesn't like special characters.
+    name = replace(wdb.name, "/" => "-")  # wandb doesn't like special characters.
+    wdb.wandb.init(project=project, name=name, reinit=true)
+    if !isnothing(wdb.config)
+        config = to_string_dict(wdb.config)
+        for (k, v) in config
+            wdb.wandb.config[k] = v
+        end
+    end
+    return nothing
+end
+
+function postepisode(wdb::WandbHook; steps, returns, lengths, kwargs...)
+    episodes = length(returns)
+    if episodes % wdb.n == 0
+        min_recs = wdb.smooth_over
+        R̄ = length(returns) < min_recs ? mean(returns) : mean(returns[end-min_recs+1:end])
+        R = returns[end]
+        L = lengths[end]
+        stats = isnothing(wdb.stats_getter) ? Dict{Symbol, Any}() : (wdb.stats_getter isa Dict ? wdb.stats_getter : wdb.stats_getter())
+        full_dict = Dict{Symbol, Any}(:steps=>steps, :episodes=>episodes, :R̄=>R̄, :R=>R, :L=>L, stats...) |> to_string_dict
+        if wdb.video_file_getter !== nothing
+            video_file = wdb.video_file_getter(episodes)
+            if video_file !== nothing && isfile(video_file)
+                full_dict["video"] = wdb.wandb.Video(video_file, fps=60, format="mp4")
+            end
+        end
+        for (k, v) in full_dict
+            if isa(v, AbstractArray)
+                delete!(full_dict, k)
+                full_dict[k*" (mean)"] = mean(v)
+            end
+            if isa(v, AbstractString)
+                delete!(full_dict, k)
+            end
+        end
+        wdb.wandb.log(full_dict)
+    end
+    return nothing
+end
+
+function postexperiment(wdb::WandbHook; kwargs...)
+    wdb.wandb.finish()
+    return nothing
+end
+
+
+
+"""
+    monitor_video_dir(video_dir::String)
+
+Function that returns a function that monitors a directory for new videos created by `VideoRecorderHook`. The returned function takes an episode number as an argument and returns the file path to the video whose filename matches the pattern `ep-\$ep_num-` where `ep_num` is the episode number. If no video is found, the function returns `nothing`.
+
+The purpose of this function is to be used as the `video_file_getter` argument in `WandbHook` to automatically upload videos to wandb as they are created by `VideoRecorderHook`. e.g., `video_file_getter=monitor_video_dir(video_dir)`.
+"""
+function monitor_video_dir(video_dir::String)
+    function get_video(ep_num::Int)
+        matches = filter(s->startswith(s, "ep-$ep_num-"), readdir(video_dir))
+        full_path_first_match = length(matches) > 0 ? joinpath(video_dir, matches[1]) : nothing
+        return full_path_first_match
+    end
+    return get_video
+end
+
+
+"""
+    SleepHook(Δt::Float64)
+
+Hook that sleeps for `Δt` seconds after each episode. This can be useful for slowing down the experiment for visualization purposes or to reduce the load on the system.
+"""
+struct SleepHook <: AbstractHook
+    Δt::Float64  # seconds
+end
+
+function postepisode(hook::SleepHook; kwargs...)
+    sleep(hook.Δt)
+    nothing
+end
+
+
+"""
+    GCHook()
+
+Hook that calls `GC.gc()` after each episode. This can be useful for reducing memory usage during long experiments.
+"""
+struct GCHook <: AbstractHook
+end
+
+function postepisode(::GCHook; kwargs...)
+    GC.gc()
+end
+
+
+"""
+    EveryNEpisodesHook(f::Function, n::Int)
+
+Hook that calls the function `f` every `n` episodes, with the same keyword arguments as the `postepisode` function.
+"""
+struct EveryNEpisodesHook <: AbstractHook
+    f::Function
+    n::Int
+    function EveryNEpisodesHook(f::Function, n::Int)
+        new(f, n)
+    end
+end
+
+function postepisode(hook::EveryNEpisodesHook; kwargs...)
+    if length(kwargs[:returns]) % hook.n == 0
+        hook.f(; kwargs...)
+    end
+    nothing
+end
+
+
+"""
+    EveryNStepsHook(f::Function, n::Int)
+
+Hook that calls the function `f` every `n` steps, with the same keyword arguments as the `poststep` function.
+"""
+struct EveryNStepsHook <: AbstractHook
+    f::Function
+    n::Int
+    function EveryNStepsHook(f::Function, n::Int)
+        new(f, n)
+    end
+end
+
+function poststep(hook::EveryNStepsHook; kwargs...)
+    if kwargs[:steps] % hook.n == 0
+        hook.f(; kwargs...)
+    end
+    nothing
+end
+
+
+"""
+    EveryNSecondsHook(f::Function, Δt::Float64)
+
+Hook that calls the function `f` every `Δt` seconds, with the same keyword arguments as the `poststep` function.
+"""
+struct EveryNSecondsHook <: AbstractHook
+    f::Function
+    Δt::Float64
+    tlast::Float64
+    function EveryNSecondsHook(f::Function, Δt::Float64)
+        new(f, Δt, -Inf)
+    end
+end
+
+function poststep(hook::EveryNSecondsHook; kwargs...)
+    if time() - hook.tlast > hook.Δt
+        hook.f(; kwargs...)
+        hook.tlast = time()
+    end
+    nothing
+end
+
